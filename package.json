@@ -1,8 +1,8 @@
 {
-  "name": "wxt-vue-starter",
-  "description": "manifest.json description",
+  "name": "web-save",
+  "description": "一个简易的网页保存工具",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -15,9 +15,13 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2",
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@types/turndown": "^5.0.5",
     "@wxt-dev/module-vue": "^1.0.2",
     "typescript": "5.6.3",
     "vue-tsc": "^2.2.10",
