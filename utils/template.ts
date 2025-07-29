@@ -1,5 +1,3 @@
-import { template } from 'lodash-es';
-
 /**
  * Template utilities for filename and content formatting
  */
@@ -36,14 +34,21 @@ export function generateTemplateData(extractedContent: {
 }
 
 /**
- * Replace template variables in a string using lodash template
+ * Replace template variables in a string using {{variable}} syntax
  */
 export function replaceTemplateVariables(templateString: string, data: TemplateData): string {
   try {
-    const compiled = template(templateString);
-    return compiled(data);
+    let result = templateString;
+    
+    // Replace {{variable}} patterns with actual data
+    Object.entries(data).forEach(([key, value]) => {
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      result = result.replace(regex, String(value || ''));
+    });
+    
+    return result;
   } catch (error) {
-    console.error('Template compilation failed:', error);
+    console.error('Template processing failed:', error);
     return templateString;
   }
 }

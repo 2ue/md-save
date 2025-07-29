@@ -369,10 +369,10 @@ function togglePasswordVisibility() {
               type="text" 
               v-model="config.titleTemplate"
               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
-              placeholder="<%= title %>_<%= date %>"
+              placeholder="{{title}}_{{date}}"
             />
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: <%= title %>, <%= date %>, <%= time %>, <%= domain %>
+              支持变量: {{title}}, {{date}}, {{time}}, {{domain}}
             </div>
           </div>
 
@@ -382,10 +382,10 @@ function togglePasswordVisibility() {
               v-model="config.contentTemplate"
               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono resize-y focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
               rows="8"
-              placeholder="# <%= title %>&#10;&#10;**原文链接**: <%= url %>&#10;**保存时间**: <%= date %>&#10;**网站**: <%= domain %>&#10;&#10;---&#10;&#10;<%= content %>"
+              placeholder="# {{title}}&#10;&#10;**原文链接**: {{url}}&#10;**保存时间**: {{date}}&#10;**网站**: {{domain}}&#10;&#10;---&#10;&#10;{{content}}"
             ></textarea>
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: <%= title %>, <%= url %>, <%= domain %>, <%= date %>, <%= time %>, <%= content %>
+              支持变量: {{title}}, {{url}}, {{domain}}, {{date}}, {{time}}, {{content}}
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { ContentExtractor } from '@/utils/content-extractor';
 import { MarkdownConverter } from '@/utils/markdown-converter';
 import { WebDAVClient, type WebDAVConfig } from '@/utils/webdav-client';
+import { contentService } from '@/utils/content-service';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -93,7 +94,7 @@ export default defineContentScript({
       }
 
       // 点击选择元素
-      function handleClick(e: MouseEvent) {
+      async function handleClick(e: MouseEvent) {
         if (!isSelectionMode) return;
 
         e.preventDefault();
@@ -116,7 +117,7 @@ export default defineContentScript({
             };
 
             // 显示预览弹窗
-            previewModal = createPreviewModal(extractedContent);
+            previewModal = await createPreviewModal(extractedContent);
             document.body.appendChild(previewModal);
           }
         }
@@ -143,7 +144,15 @@ export default defineContentScript({
     }
 
     // 创建预览弹窗
-    function createPreviewModal(content: any) {
+    async function createPreviewModal(content: any) {
+      // Process content using templates for preview
+      const processedContent = await contentService.processContent({
+        title: content.title,
+        url: content.url,
+        markdown: content.markdown,
+        timestamp: content.timestamp
+      });
+      
       const modal = document.createElement('div');
       modal.id = 'web-save-preview-modal';
       modal.style.cssText = `
@@ -178,14 +187,14 @@ export default defineContentScript({
         </div>
         
         <div style="margin-bottom: 16px;">
-          <p style="margin: 4px 0; font-size: 14px; color: #666;"><strong>标题:</strong> ${content.title}</p>
-          <p style="margin: 4px 0; font-size: 14px; color: #666;"><strong>URL:</strong> ${content.url}</p>
-          <p style="margin: 4px 0; font-size: 14px; color: #666;"><strong>时间:</strong> ${new Date(content.timestamp).toLocaleString()}</p>
+          <div style="text-xs text-gray-600 mb-2">
+            文件名: ${processedContent.filename}
+          </div>
         </div>
 
         <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">Markdown内容:</label>
-          <textarea id="markdown-content" readonly style="
+          <label style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">内容预览:</label>
+          <textarea readonly style="
             width: 100%;
             height: 200px;
             border: 1px solid #ddd;
@@ -195,7 +204,7 @@ export default defineContentScript({
             font-size: 12px;
             resize: vertical;
             box-sizing: border-box;
-          ">${content.markdown}</textarea>
+          ">${processedContent.content}</textarea>
         </div>
 
         <div style="display: flex; gap: 8px; justify-content: flex-end;">
@@ -265,15 +274,21 @@ export default defineContentScript({
 
     // 保存到本地
     async function saveToLocal(content: any) {
-      const filename = `${content.title.replace(/[^\w\s-]/g, '')}_${new Date().toISOString().split('T')[0]}.md`;
-
       try {
-        // 创建下载链接
-        const blob = new Blob([content.markdown], { type: 'text/markdown' });
+        // Process content using ContentService and templates
+        const processedContent = await contentService.processContent({
+          title: content.title,
+          url: content.url,
+          markdown: content.markdown,
+          timestamp: content.timestamp
+        });
+
+        // Create download link
+        const blob = new Blob([processedContent.content], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = filename;
+        a.download = processedContent.filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -297,10 +312,16 @@ export default defineContentScript({
           return;
         }
 
-        const client = new WebDAVClient(webdavConfig);
-        const filename = `${content.title.replace(/[^\w\s-]/g, '')}_${new Date().toISOString().split('T')[0]}.md`;
+        // Process content using ContentService and templates
+        const processedContent = await contentService.processContent({
+          title: content.title,
+          url: content.url,
+          markdown: content.markdown,
+          timestamp: content.timestamp
+        });
 
-        const success = await client.uploadFile(filename, content.markdown);
+        const client = new WebDAVClient(webdavConfig);
+        const success = await client.uploadFile(processedContent.filename, processedContent.content);
 
         if (success) {
           showMessage('保存到WebDAV成功', 'success');
