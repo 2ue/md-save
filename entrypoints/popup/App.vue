@@ -1,9 +1,22 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue';
-import { MousePointer, FileText, History, Settings } from 'lucide-vue-next';
+import { MousePointer, FileText, History, Settings, Download, Cloud } from 'lucide-vue-next';
+import { contentService, type ProcessedContent } from '@/utils/content-service';
+import { WebDAVClient } from '@/utils/webdav-client';
+
+interface ExtractedContent {
+  html: string;
+  markdown: string;
+  title: string;
+  url: string;
+  timestamp: string;
+}
 
 const isLoading = ref(false);
 const currentTab = ref<any | null>(null);
+const extractedContent = ref<ExtractedContent | null>(null);
+const processedContent = ref<ProcessedContent | null>(null);
+const message = ref('');
 
 onMounted(async () => {
   // Get current active tab
@@ -11,42 +24,100 @@ onMounted(async () => {
   currentTab.value = tab;
 });
 
-async function startSelection() {
-  if (!currentTab.value?.id) return;
+// 显示消息
+function showMessage(msg: string, type: 'success' | 'error' = 'success') {
+  message.value = msg;
+  setTimeout(() => {
+    message.value = '';
+  }, 3000);
+}
 
-  isLoading.value = true;
+// 获取当前标签页
+async function getCurrentTab() {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+async function startSelection() {
+  const tab = await getCurrentTab();
+  if (!tab.id) return;
+
   try {
-    // Send message to content script to start selection
-    await browser.tabs.sendMessage(currentTab.value.id, { type: 'START_SELECTION' });
-    
-    // Close popup after starting selection
+    await browser.tabs.sendMessage(tab.id, { type: 'START_SELECTION' });
     window.close();
   } catch (error) {
-    console.error('Failed to start selection:', error);
-  } finally {
-    isLoading.value = false;
+    showMessage('无法在此页面使用选择功能', 'error');
   }
 }
 
-async function selectAll() {
-  if (!currentTab.value?.id) return;
+async function saveFullPage() {
+  const tab = await getCurrentTab();
+  if (!tab.id) return;
 
   isLoading.value = true;
   try {
-    // Send message to content script to extract full page
-    await browser.tabs.sendMessage(currentTab.value.id, { type: 'EXTRACT_FULL_PAGE' });
-    
-    // Close popup after selecting all
-    window.close();
+    const response = await browser.tabs.sendMessage(tab.id, { type: 'EXTRACT_FULL_PAGE' });
+    if (response.success) {
+      extractedContent.value = response.data;
+      // Process content using configuration
+      processedContent.value = await contentService.processContent(response.data);  
+      showMessage('页面内容已提取');
+    } else {
+      showMessage('提取失败', 'error');
+    }
   } catch (error) {
-    console.error('Failed to select all:', error);
-  } finally {
-    isLoading.value = false;
+    showMessage('无法提取页面内容', 'error');
+  }
+  isLoading.value = false;
+}
+
+async function downloadLocal() {
+  if (!processedContent.value) return;
+
+  const config = contentService.getConfig();
+  const downloadPath = config.downloadDirectory === 'custom' && config.customDownloadPath
+    ? config.customDownloadPath
+    : null;
+
+  try {
+    await browser.runtime.sendMessage({
+      type: 'DOWNLOAD_FILE',
+      data: {
+        filename: processedContent.value.filename,
+        content: processedContent.value.content,
+        downloadPath
+      }
+    });
+    showMessage('文件下载成功');
+  } catch (error) {
+    showMessage('下载失败', 'error');
+  }
+}
+
+async function saveToWebDAV() {
+  if (!processedContent.value) return;
+
+  const config = contentService.getConfig();
+  
+  if (!config.webdav.url || !config.webdav.username) {
+    showMessage('请先配置WebDAV', 'error');
+    openSettings();
+    return;
+  }
+
+  isLoading.value = true;
+  const client = new WebDAVClient(config.webdav);
+  const success = await client.uploadFile(processedContent.value.filename, processedContent.value.content);
+  isLoading.value = false;
+
+  if (success) {
+    showMessage('保存到WebDAV成功');
+  } else {
+    showMessage('保存到WebDAV失败', 'error');
   }
 }
 
 function openHistory() {
-  // Open history page in new tab
   browser.tabs.create({
     url: browser.runtime.getURL('/history.html')
   });
@@ -54,7 +125,6 @@ function openHistory() {
 }
 
 function openSettings() {
-  // Open options page in new tab  
   browser.tabs.create({
     url: browser.runtime.getURL('/options.html')
   });
@@ -79,6 +149,11 @@ function openSettings() {
       </button>
     </div>
 
+    <!-- Message -->
+    <div v-if="message" :class="['px-3 py-2 rounded-md text-sm mb-3', message.includes('失败') || message.includes('错误') ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800']">
+      {{ message }}
+    </div>
+
     <!-- Current page info -->
     <div v-if="currentTab" class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
       <div class="flex items-start gap-2">
@@ -99,7 +174,7 @@ function openSettings() {
     </div>
 
     <!-- Action buttons -->
-    <div class="flex flex-col gap-2">
+    <div v-if="!processedContent" class="flex flex-col gap-2">
       <button
         @click="startSelection"
         :disabled="isLoading"
@@ -113,14 +188,14 @@ function openSettings() {
       </button>
 
       <button
-        @click="selectAll"
+        @click="saveFullPage"
         :disabled="isLoading"
         class="flex items-center gap-3 p-3 border border-blue-600 rounded-lg bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <FileText class="w-5 h-5" />
         <div class="text-left">
           <div class="font-medium">保存整个页面</div>
-          <div class="text-xs opacity-75">选择页面的主要内容</div>
+          <div class="text-xs opacity-75">保存页面的主要内容</div>
         </div>
       </button>
 
@@ -134,6 +209,50 @@ function openSettings() {
           <div class="text-xs opacity-75">查看已保存的内容</div>
         </div>
       </button>
+    </div>
+
+    <!-- Content preview and save options -->
+    <div v-if="processedContent" class="space-y-4">
+      <div class="border-t border-gray-200 pt-4">
+        <h3 class="text-sm font-medium text-gray-900 mb-2">内容预览</h3>
+        <div class="text-xs text-gray-600 mb-2">
+          文件名: {{ processedContent.filename }}
+        </div>
+        <div class="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-40 overflow-y-auto">
+          <pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono">{{ processedContent.content }}</pre>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <button
+          @click="downloadLocal"
+          :disabled="isLoading"
+          class="flex items-center gap-3 p-3 bg-green-600 text-white rounded-lg hover:bg-green-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download class="w-5 h-5" />
+          <div class="text-left">
+            <div class="font-medium">下载到本地</div>
+          </div>
+        </button>
+
+        <button
+          @click="saveToWebDAV"
+          :disabled="isLoading"
+          class="flex items-center gap-3 p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Cloud class="w-5 h-5" />
+          <div class="text-left">
+            <div class="font-medium">保存到WebDAV</div>
+          </div>
+        </button>
+
+        <button
+          @click="processedContent = null; extractedContent = null"
+          class="text-sm text-gray-600 hover:text-gray-800 py-2 transition-colors"
+        >
+          重新选择内容
+        </button>
+      </div>
     </div>
 
     <!-- Loading overlay -->

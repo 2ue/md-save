@@ -1,10 +1,12 @@
 lockfileVersion: 5.4
 
 specifiers:
+  '@types/lodash-es': ^4.17.12
   '@types/turndown': ^5.0.5
   '@wxt-dev/module-vue': ^1.0.2
   autoprefixer: ^10.4.21
   jszip: ^3.10.1
+  lodash-es: ^4.17.21
   lucide-vue-next: ^0.532.0
   nanoid: ^5.1.5
   postcss: ^8.5.6
@@ -18,6 +20,7 @@ specifiers:
 
 dependencies:
   jszip: 3.10.1
+  lodash-es: 4.17.21
   lucide-vue-next: 0.532.0_vue@3.5.17
   nanoid: 5.1.5
   turndown: 7.2.0
@@ -25,6 +28,7 @@ dependencies:
   vue: 3.5.17_typescript@5.6.3
 
 devDependencies:
+  '@types/lodash-es': 4.17.12
   '@types/turndown': 5.0.5
   '@wxt-dev/module-vue': 1.0.2_vue@3.5.17+wxt@0.20.7
   autoprefixer: 10.4.21_postcss@8.5.6
@@ -637,6 +641,16 @@ packages:
 
   /@types/har-format/1.2.16:
     resolution: {integrity: sha512-fluxdy7ryD3MV6h8pTfTYpy/xQzCFC7m89nOH9y94cNqJ1mDIDPut7MnRHI3F6qRmh/cT2fUjG1MLdCNb4hE9A==}
+    dev: true
+
+  /@types/lodash-es/4.17.12:
+    resolution: {integrity: sha512-0NgftHUcV4v34VhXm8QBSftKVXtbkBG3ViCjs6+eJ5a6y6Mi/jiFGPc1sC7QK+9BFhWrURE3EOggmWaSxL9OzQ==}
+    dependencies:
+      '@types/lodash': 4.17.20
+    dev: true
+
+  /@types/lodash/4.17.20:
+    resolution: {integrity: sha512-H3MHACvFUEiujabxhaI/ImO6gUrd8oOurg7LQtS7mbwIXA/cUqWrvBsaeJ23aZEPk1TAYkurjfMbSELfoCXlGA==}
     dev: true
 
   /@types/minimatch/3.0.5:
@@ -2253,6 +2267,10 @@ packages:
       pkg-types: 2.2.0
       quansync: 0.2.10
     dev: true
+
+  /lodash-es/4.17.21:
+    resolution: {integrity: sha512-mKnC+QJ9pWVzv+C4/U3rRsHapFfHvQFoFB92e52xeyGMcX6/OlIl78je1u8vePzYZSkkogMPJ2yjxxsb89cxyw==}
+    dev: false
 
   /lodash.camelcase/4.3.0:
     resolution: {integrity: sha512-TwuEnCnxbc3rAvhf/LbG7tJUDzhqXyFnv3dtzLOPgCG/hODL7WFnsbwktkD7yUV0RrreP/l1PALq/YSg6VvjlA==}

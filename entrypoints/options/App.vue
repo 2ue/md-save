@@ -307,21 +307,51 @@ function togglePasswordVisibility() {
         </div>
       </div>
 
-      <!-- General Options -->
+      <!-- Download Settings -->
       <div class="bg-white rounded-xl p-6 shadow-sm">
         <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-5 pb-3 border-b border-gray-200">
-          <Settings class="w-5 h-5" />
-          通用选项
+          <HardDrive class="w-5 h-5" />
+          下载设置
         </h2>
         <div class="space-y-4">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input 
-              type="checkbox" 
-              v-model="config.confirmBeforeSave"
-              class="w-4 h-4"
-            />
-            <span class="text-sm text-gray-700">每次保存前显示确认对话框</span>
-          </label>
+          <div>
+            <label class="block font-medium text-gray-700 mb-3">下载目录</label>
+            <div class="space-y-3">
+              <label class="flex items-center gap-2 cursor-pointer p-3 border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'default' ? 'border-blue-500 bg-blue-50' : ''">
+                <input 
+                  type="radio" 
+                  value="default" 
+                  v-model="config.downloadDirectory"
+                  class="w-4 h-4"
+                />
+                <span class="text-sm text-gray-700">使用浏览器默认下载目录</span>
+              </label>
+              
+              <div class="border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'custom' ? 'border-blue-500' : ''">
+                <label class="flex items-center gap-2 cursor-pointer p-3" :class="config.downloadDirectory === 'custom' ? 'bg-blue-50' : ''">
+                  <input 
+                    type="radio" 
+                    value="custom" 
+                    v-model="config.downloadDirectory"
+                    class="w-4 h-4"
+                  />
+                  <span class="text-sm text-gray-700">自定义下载目录</span>
+                </label>
+                
+                <div v-if="config.downloadDirectory === 'custom'" class="px-3 pb-3">
+                  <input 
+                    type="text" 
+                    v-model="config.customDownloadPath"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
+                    placeholder="例如: Downloads/MD保存"
+                  />
+                  <div class="mt-1 text-xs text-gray-500">
+                    相对于默认下载目录的路径，如：subfolder 或 subfolder/markdown
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -339,10 +369,10 @@ function togglePasswordVisibility() {
               type="text" 
               v-model="config.titleTemplate"
               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
-              placeholder="{title}_{date}"
+              placeholder="<%= title %>_<%= date %>"
             />
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: {title}, {date}, {time}, {domain}
+              支持变量: <%= title %>, <%= date %>, <%= time %>, <%= domain %>
             </div>
           </div>
 
@@ -352,10 +382,10 @@ function togglePasswordVisibility() {
               v-model="config.contentTemplate"
               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono resize-y focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
               rows="8"
-              placeholder="# {title}&#10;&#10;**原文链接**: {url}&#10;**保存时间**: {date}&#10;**网站**: {domain}&#10;&#10;---&#10;&#10;{content}"
+              placeholder="# <%= title %>&#10;&#10;**原文链接**: <%= url %>&#10;**保存时间**: <%= date %>&#10;**网站**: <%= domain %>&#10;&#10;---&#10;&#10;<%= content %>"
             ></textarea>
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: {title}, {url}, {domain}, {date}, {time}, {content}
+              支持变量: <%= title %>, <%= url %>, <%= domain %>, <%= date %>, <%= time %>, <%= content %>
             </div>
           </div>
         </div>
