@@ -300,10 +300,10 @@ export default defineContentScript({
     // 保存到WebDAV
     async function saveToWebDAV(content: any) {
       try {
-        const result = await browser.storage.sync.get('webdavConfig');
-        const webdavConfig: WebDAVConfig = result.webdavConfig;
+        const result = await browser.storage.local.get('extensionConfig');
+        const webdavConfig: WebDAVConfig = result.extensionConfig?.webdav;
 
-        if (!webdavConfig || !webdavConfig.url || !webdavConfig.username) {
+        if (!webdavConfig || !webdavConfig.url || !webdavConfig.username || !webdavConfig.password) {
           showMessage('请先在插件中配置WebDAV', 'error');
           return;
         }
