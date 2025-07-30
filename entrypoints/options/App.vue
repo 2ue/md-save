@@ -115,10 +115,39 @@ async function testWebDAVConnection() {
   try {
     const client = new WebDAVClient(config.webdav);
     const result = await client.testConnection();
-    webdavTestResult.value = {
-      success: result,
-      message: result ? '连接成功' : '连接失败'
-    };
+    
+    if (result) {
+      // Test path creation/access if a specific path is configured
+      if (config.webdav.path && config.webdav.path !== '/') {
+        const pathResult = await client.testPath();
+        if (pathResult.exists) {
+          webdavTestResult.value = {
+            success: true,
+            message: `连接成功，路径 "${config.webdav.path}" 可访问`
+          };
+        } else if (pathResult.canCreate) {
+          webdavTestResult.value = {
+            success: true,
+            message: `连接成功，路径 "${config.webdav.path}" 已自动创建`
+          };
+        } else {
+          webdavTestResult.value = {
+            success: false,
+            message: `连接成功但无法创建路径 "${config.webdav.path}": ${pathResult.error}`
+          };
+        }
+      } else {
+        webdavTestResult.value = {
+          success: true,
+          message: '连接成功，使用根目录'
+        };
+      }
+    } else {
+      webdavTestResult.value = {
+        success: false,
+        message: '连接失败，请检查服务器地址、用户名和密码'
+      };
+    }
   } catch (error) {
     console.error('WebDAV test failed:', error);
     webdavTestResult.value = {

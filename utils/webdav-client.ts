@@ -20,24 +20,30 @@ export class WebDAVClient {
     });
   }
 
+  private normalizePath(path?: string): string {
+    if (!path || path === '/') return '/';
+    // Remove leading slash if present, add trailing slash if missing
+    const cleaned = path.startsWith('/') ? path.substring(1) : path;
+    return cleaned.endsWith('/') ? `/${cleaned}` : `/${cleaned}/`;
+  }
+
   async uploadFile(filename: string, content: string): Promise<boolean> {
     try {
-      const basePath = this.config.path || '/';
-      const normalizedPath = basePath.endsWith('/') ? basePath : `${basePath}/`;
-      const filePath = `${normalizedPath}${filename}`;
+      const basePath = this.normalizePath(this.config.path);
+      const filePath = `${basePath}${filename}`;
       
-      // Ensure directory exists
-      const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
-      if (dirPath && dirPath !== '/') {
+      // Ensure the configured path directory exists
+      if (basePath !== '/') {
         try {
-          await this.client.createDirectory(dirPath, { recursive: true });
+          await this.client.createDirectory(basePath.slice(0, -1), { recursive: true }); // Remove trailing slash for createDirectory
         } catch (error) {
-          // Directory might already exist, ignore error
+          console.warn('Failed to create base directory:', error);
+          // Continue anyway, directory might already exist
         }
       }
       
       await this.client.putFileContents(filePath, content, {
-        contentLength: false, // Let the client calculate content length
+        contentLength: false,
         overwrite: true
       });
       
@@ -50,12 +56,69 @@ export class WebDAVClient {
 
   async testConnection(): Promise<boolean> {
     try {
-      // Test connection by getting server info or directory listing
+      const testPath = this.normalizePath(this.config.path);
+      
+      // First test basic server connection
       await this.client.getDirectoryContents('/');
+      
+      // If a specific path is configured, test access to that path
+      if (testPath !== '/') {
+        try {
+          // Try to access the configured path
+          await this.client.getDirectoryContents(testPath.slice(0, -1)); // Remove trailing slash
+        } catch (error) {
+          // If path doesn't exist, try to create it
+          try {
+            await this.client.createDirectory(testPath.slice(0, -1), { recursive: true });
+            console.log(`Created WebDAV path: ${testPath}`);
+          } catch (createError) {
+            console.error('Failed to create or access configured path:', createError);
+            return false;
+          }
+        }
+      }
+      
       return true;
     } catch (error) {
       console.error('WebDAV connection test failed:', error);
       return false;
+    }
+  }
+
+  // 测试方法：检查路径是否可以访问或创建
+  async testPath(): Promise<{ exists: boolean; canCreate: boolean; error?: string }> {
+    try {
+      const testPath = this.normalizePath(this.config.path);
+      
+      if (testPath === '/') {
+        return { exists: true, canCreate: true };
+      }
+
+      const pathWithoutSlash = testPath.slice(0, -1);
+      
+      // Check if path exists
+      try {
+        await this.client.getDirectoryContents(pathWithoutSlash);
+        return { exists: true, canCreate: true };
+      } catch (error) {
+        // Path doesn't exist, try to create it
+        try {
+          await this.client.createDirectory(pathWithoutSlash, { recursive: true });
+          return { exists: false, canCreate: true };
+        } catch (createError) {
+          return { 
+            exists: false, 
+            canCreate: false, 
+            error: `Cannot create path: ${createError}` 
+          };
+        }
+      }
+    } catch (error) {
+      return { 
+        exists: false, 
+        canCreate: false, 
+        error: `Path test failed: ${error}` 
+      };
     }
   }
 }
