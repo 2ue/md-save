@@ -379,10 +379,10 @@ function togglePasswordVisibility() {
               type="text" 
               v-model="config.titleTemplate"
               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
-              placeholder="{{title}}_{{date}}"
+              placeholder="&#123;&#123;title&#125;&#125;_&#123;&#123;date&#125;&#125;"
             />
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: {{title}} (页面标题), {{date}} (YYYY-MM-DD), {{time}} (HH:MM:SS), {{domain}} (网站域名)
+              支持变量: &#123;&#123;title&#125;&#125; (页面标题), &#123;&#123;date&#125;&#125; (YYYY-MM-DD), &#123;&#123;time&#125;&#125; (HH:MM:SS), &#123;&#123;domain&#125;&#125; (网站域名)
             </div>
           </div>
 
@@ -392,10 +392,10 @@ function togglePasswordVisibility() {
               v-model="config.contentTemplate"
               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono resize-y focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
               rows="8"
-              placeholder="---&#10;**原文链接**: {{url}}&#10;**保存时间**: {{date}}&#10;**网站**: {{domain}}&#10;---&#10;&#10;{{content}}"
+              placeholder="---&#10;**原文链接**: &#123;&#123;url&#125;&#125;&#10;**保存时间**: &#123;&#123;date&#125;&#125;&#10;**网站**: &#123;&#123;domain&#125;&#125;&#10;---&#10;&#10;&#123;&#123;content&#125;&#125;"
             ></textarea>
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: {{title}} (页面标题), {{url}} (页面链接), {{domain}} (网站域名), {{date}} (YYYY-MM-DD), {{time}} (HH:MM:SS), {{content}} (页面内容)
+              支持变量: &#123;&#123;title&#125;&#125; (页面标题), &#123;&#123;url&#125;&#125; (页面链接), &#123;&#123;domain&#125;&#125; (网站域名), &#123;&#123;date&#125;&#125; (YYYY-MM-DD), &#123;&#123;time&#125;&#125; (HH:MM:SS), &#123;&#123;content&#125;&#125; (页面内容)
             </div>
           </div>
         </div>
