@@ -21,9 +21,14 @@ export class WebDAVClient {
   constructor(config: WebDAVConfig) {
     this.config = config;
     this.client = createClient(config.url, {
-      authType: AuthType.Auto,
+      authType: AuthType.Digest,
       username: config.username,
-      password: config.password
+      password: config.password,
+      httpAgent: false,
+      httpsAgent: false,
+      headers: {
+        "X-Requested-With": "XMLHttpRequest"
+      }
     });
   }
 
@@ -32,7 +37,7 @@ export class WebDAVClient {
    */
   async testConnection(): Promise<boolean> {
     try {
-      await this.client.getDirectoryContents('/');
+      await this.client.exists('/');
       return true;
     } catch (error) {
       return false;
