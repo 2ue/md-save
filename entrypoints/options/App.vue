@@ -14,9 +14,9 @@ const webdavTestResult = ref<{ success?: boolean; message?: string } | null>(nul
 const saveMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
 
 const isWebDAVValid = computed(() => {
-  return config.webdav.url && 
-         config.webdav.username && 
-         config.webdav.password;
+  return config.webdav.url.trim() && 
+         config.webdav.username.trim() && 
+         config.webdav.password.trim();
 });
 
 onMounted(async () => {
@@ -139,7 +139,29 @@ function resetToDefaults() {
 
 function showMessage(type: 'success' | 'error', text: string) {
   saveMessage.value = { type, text };
+  
+  // Create toast notification
+  const toast = document.createElement('div');
+  toast.className = `fixed top-6 right-6 px-4 py-3 rounded-lg font-medium z-50 transition-all duration-300 transform translate-x-full ${
+    type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+  }`;
+  toast.textContent = text;
+  
+  document.body.appendChild(toast);
+  
+  // Animate in
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateX(0)';
+  });
+  
+  // Auto remove after 3 seconds
   setTimeout(() => {
+    toast.style.transform = 'translateX(100%)';
+    setTimeout(() => {
+      if (document.body.contains(toast)) {
+        document.body.removeChild(toast);
+      }
+    }, 300);
     saveMessage.value = null;
   }, 3000);
 }
@@ -170,14 +192,6 @@ function togglePasswordVisibility() {
 
     <!-- Settings form -->
     <div v-else class="space-y-6">
-      <!-- Save Message -->
-      <div v-if="saveMessage" :class="[
-        'px-4 py-3 rounded-lg font-medium',
-        saveMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'
-      ]">
-        {{ saveMessage.text }}
-      </div>
-
       <!-- Save Method Section -->
       <div class="bg-white rounded-xl p-6 shadow-sm">
         <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-5 pb-3 border-b border-gray-200">
@@ -187,21 +201,65 @@ function togglePasswordVisibility() {
         
         <div class="space-y-4">
           <!-- Local Save Option -->
-          <label class="flex items-start p-4 border border-gray-200 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all" :class="config.saveMethod === 'local' ? 'border-blue-500 bg-blue-50' : ''">
-            <input 
-              type="radio" 
-              value="local" 
-              v-model="config.saveMethod"
-              class="mt-1 mr-3"
-            />
-            <div class="flex items-center gap-3 flex-1">
-              <HardDrive class="w-5 h-5 text-gray-600" />
-              <div class="flex-1">
-                <div class="font-medium">本地下载</div>
-                <div class="text-sm text-gray-500 mt-1">保存到浏览器下载目录，文件直接下载到本地</div>
+          <div class="border border-gray-200 rounded-lg" :class="config.saveMethod === 'local' ? 'border-blue-500' : ''">
+            <label class="flex items-start p-4 cursor-pointer hover:bg-blue-50 transition-all" :class="config.saveMethod === 'local' ? 'bg-blue-50' : ''" @click="config.saveMethod = 'local'">
+              <input 
+                type="radio" 
+                value="local" 
+                v-model="config.saveMethod"
+                class="mt-1 mr-3"
+              />
+              <div class="flex items-center gap-3 flex-1">
+                <HardDrive class="w-5 h-5 text-gray-600" />
+                <div class="flex-1">
+                  <div class="font-medium">本地下载</div>
+                  <div class="text-sm text-gray-500 mt-1">保存到浏览器下载目录，文件直接下载到本地</div>
+                </div>
+              </div>
+            </label>
+            
+            <!-- Local Download Configuration (shown when Local is selected) -->
+            <div v-if="config.saveMethod === 'local'" class="border-t border-gray-200 p-4 bg-gray-50">
+              <div>
+                <label class="block font-medium text-gray-700 mb-3">下载目录</label>
+                <div class="space-y-3">
+                  <label class="flex items-center gap-2 cursor-pointer p-3 border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'default' ? 'border-blue-500 bg-blue-50' : ''">
+                    <input 
+                      type="radio" 
+                      value="default" 
+                      v-model="config.downloadDirectory"
+                      class="w-4 h-4"
+                    />
+                    <span class="text-sm text-gray-700">使用浏览器默认下载目录</span>
+                  </label>
+                  
+                  <div class="border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'custom' ? 'border-blue-500' : ''">
+                    <label class="flex items-center gap-2 cursor-pointer p-3" :class="config.downloadDirectory === 'custom' ? 'bg-blue-50' : ''">
+                      <input 
+                        type="radio" 
+                        value="custom" 
+                        v-model="config.downloadDirectory"
+                        class="w-4 h-4"
+                      />
+                      <span class="text-sm text-gray-700">自定义下载目录</span>
+                    </label>
+                    
+                    <div v-if="config.downloadDirectory === 'custom'" class="px-3 pb-3">
+                      <input 
+                        type="text" 
+                        v-model="config.customDownloadPath"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
+                        placeholder="例如: Downloads/MD保存"
+                      />
+                      <div class="mt-1 text-xs text-gray-500">
+                        相对于默认下载目录的路径，如：subfolder 或 subfolder/markdown
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </label>
+          </div>
 
           <!-- WebDAV Save Option -->
           <div class="border border-gray-200 rounded-lg" :class="config.saveMethod === 'webdav' ? 'border-blue-500' : ''">
@@ -307,54 +365,6 @@ function togglePasswordVisibility() {
         </div>
       </div>
 
-      <!-- Download Settings -->
-      <div class="bg-white rounded-xl p-6 shadow-sm">
-        <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-5 pb-3 border-b border-gray-200">
-          <HardDrive class="w-5 h-5" />
-          下载设置
-        </h2>
-        <div class="space-y-4">
-          <div>
-            <label class="block font-medium text-gray-700 mb-3">下载目录</label>
-            <div class="space-y-3">
-              <label class="flex items-center gap-2 cursor-pointer p-3 border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'default' ? 'border-blue-500 bg-blue-50' : ''">
-                <input 
-                  type="radio" 
-                  value="default" 
-                  v-model="config.downloadDirectory"
-                  class="w-4 h-4"
-                />
-                <span class="text-sm text-gray-700">使用浏览器默认下载目录</span>
-              </label>
-              
-              <div class="border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'custom' ? 'border-blue-500' : ''">
-                <label class="flex items-center gap-2 cursor-pointer p-3" :class="config.downloadDirectory === 'custom' ? 'bg-blue-50' : ''">
-                  <input 
-                    type="radio" 
-                    value="custom" 
-                    v-model="config.downloadDirectory"
-                    class="w-4 h-4"
-                  />
-                  <span class="text-sm text-gray-700">自定义下载目录</span>
-                </label>
-                
-                <div v-if="config.downloadDirectory === 'custom'" class="px-3 pb-3">
-                  <input 
-                    type="text" 
-                    v-model="config.customDownloadPath"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
-                    placeholder="例如: Downloads/MD保存"
-                  />
-                  <div class="mt-1 text-xs text-gray-500">
-                    相对于默认下载目录的路径，如：subfolder 或 subfolder/markdown
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Template Configuration -->
       <div class="bg-white rounded-xl p-6 shadow-sm">
         <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-5 pb-3 border-b border-gray-200">
@@ -372,7 +382,7 @@ function togglePasswordVisibility() {
               placeholder="{{title}}_{{date}}"
             />
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: {{title}}, {{date}}, {{time}}, {{domain}}
+              支持变量: {{title}} (页面标题), {{date}} (YYYY-MM-DD), {{time}} (HH:MM:SS), {{domain}} (网站域名)
             </div>
           </div>
 
@@ -382,10 +392,10 @@ function togglePasswordVisibility() {
               v-model="config.contentTemplate"
               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono resize-y focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
               rows="8"
-              placeholder="# {{title}}&#10;&#10;**原文链接**: {{url}}&#10;**保存时间**: {{date}}&#10;**网站**: {{domain}}&#10;&#10;---&#10;&#10;{{content}}"
+              placeholder="---&#10;**原文链接**: {{url}}&#10;**保存时间**: {{date}}&#10;**网站**: {{domain}}&#10;---&#10;&#10;{{content}}"
             ></textarea>
             <div class="mt-1 text-xs text-gray-500">
-              支持变量: {{title}}, {{url}}, {{domain}}, {{date}}, {{time}}, {{content}}
+              支持变量: {{title}} (页面标题), {{url}} (页面链接), {{domain}} (网站域名), {{date}} (YYYY-MM-DD), {{time}} (HH:MM:SS), {{content}} (页面内容)
             </div>
           </div>
         </div>

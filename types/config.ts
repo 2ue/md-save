@@ -19,13 +19,11 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   saveMethod: 'local',
   downloadDirectory: 'default',
   customDownloadPath: '',
-  titleTemplate: '{{title}}_{{date}}',
-  contentTemplate: `# {{title}}
-
+  titleTemplate: '{{title}}',
+  contentTemplate: `---
 **原文链接**: {{url}}
 **保存时间**: {{date}}
 **网站**: {{domain}}
-
 ---
 
 {{content}}`,

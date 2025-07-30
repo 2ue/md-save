@@ -27,7 +27,29 @@ onMounted(async () => {
 // 显示消息
 function showMessage(msg: string, type: 'success' | 'error' = 'success') {
   message.value = msg;
+  
+  // Create toast notification
+  const toast = document.createElement('div');
+  toast.className = `fixed top-6 right-6 px-4 py-3 rounded-lg font-medium z-50 transition-all duration-300 transform translate-x-full ${
+    type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+  }`;
+  toast.textContent = msg;
+  
+  document.body.appendChild(toast);
+  
+  // Animate in
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateX(0)';
+  });
+  
+  // Auto remove after 3 seconds
   setTimeout(() => {
+    toast.style.transform = 'translateX(100%)';
+    setTimeout(() => {
+      if (document.body.contains(toast)) {
+        document.body.removeChild(toast);
+      }
+    }, 300);
     message.value = '';
   }, 3000);
 }
@@ -150,9 +172,7 @@ function openSettings() {
     </div>
 
     <!-- Message -->
-    <div v-if="message" :class="['px-3 py-2 rounded-md text-sm mb-3', message.includes('失败') || message.includes('错误') ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800']">
-      {{ message }}
-    </div>
+    <!-- Toast messages will show on top-right corner -->
 
     <!-- Current page info -->
     <div v-if="currentTab" class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">

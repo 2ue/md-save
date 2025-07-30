@@ -174,8 +174,9 @@ export default defineContentScript({
         background: white;
         border-radius: 8px;
         padding: 20px;
-        max-width: 600px;
-        max-height: 80vh;
+        max-width: 800px;
+        width: 90vw;
+        max-height: 85vh;
         overflow-y: auto;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
       `;
@@ -185,25 +186,20 @@ export default defineContentScript({
           <h3 style="margin: 0; color: #333; font-size: 18px;">内容预览</h3>
           <button id="close-preview" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">&times;</button>
         </div>
-        
-        <div style="margin-bottom: 16px;">
-          <div style="text-xs text-gray-600 mb-2">
-            文件名: ${processedContent.filename}
-          </div>
-        </div>
 
         <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">内容预览:</label>
           <textarea readonly style="
             width: 100%;
-            height: 200px;
+            height: 400px;
             border: 1px solid #ddd;
             border-radius: 4px;
-            padding: 8px;
+            padding: 12px;
             font-family: 'Courier New', monospace;
-            font-size: 12px;
+            font-size: 13px;
+            line-height: 1.5;
             resize: vertical;
             box-sizing: border-box;
+            background: #f8f9fa;
           ">${processedContent.content}</textarea>
         </div>
 
