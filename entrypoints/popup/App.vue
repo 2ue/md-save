@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { MousePointer, FileText, History, Settings, Download, Cloud } from 'lucide-vue-next';
 import { contentService, type ProcessedContent } from '@/utils/content-service';
 import { WebDAVClient } from '@/utils/webdav-client';
+import { showFileConflictDialog } from '@/utils/file-conflict-handler';
 
 interface ExtractedContent {
   html: string;
@@ -129,17 +130,40 @@ async function saveToWebDAV() {
 
   isLoading.value = true;
   const client = new WebDAVClient(config.webdav);
-  const result = await client.uploadFile(processedContent.value.filename, processedContent.value.content);
-  isLoading.value = false;
-
-  if (result.success) {
-    if (result.cancelled) {
-      showMessage('用户取消了上传');
-    } else {
-      showMessage(`保存到WebDAV成功${result.finalPath ? `: ${result.finalPath}` : ''}`);
+  
+  try {
+    // 先尝试上传，不覆盖
+    let result = await client.uploadFile(processedContent.value.filename, processedContent.value.content, false);
+    
+    // 如果文件已存在，显示冲突处理对话框
+    if (!result.success && result.fileExists) {
+      const conflictResult = await showFileConflictDialog(processedContent.value.filename);
+      
+      if (conflictResult.action === 'cancel') {
+        showMessage('用户取消了上传');
+        isLoading.value = false;
+        return;
+      }
+      
+      if (conflictResult.action === 'overwrite') {
+        // 覆盖文件
+        result = await client.uploadFile(processedContent.value.filename, processedContent.value.content, true);
+      } else if (conflictResult.action === 'rename' && conflictResult.newFilename) {
+        // 使用新文件名
+        result = await client.uploadFile(conflictResult.newFilename, processedContent.value.content, false);
+      }
     }
-  } else {
-    showMessage(`保存到WebDAV失败: ${result.error || '未知错误'}`, 'error');
+
+    isLoading.value = false;
+
+    if (result.success) {
+      showMessage(`保存到WebDAV成功${result.finalPath ? `: ${result.finalPath}` : ''}`);
+    } else {
+      showMessage(`保存到WebDAV失败: ${result.error || '未知错误'}`, 'error');
+    }
+  } catch (error) {
+    isLoading.value = false;
+    showMessage('保存到WebDAV失败', 'error');
   }
 }
 

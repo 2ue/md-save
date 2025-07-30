@@ -2,6 +2,7 @@ import { ContentExtractor } from '@/utils/content-extractor';
 import { MarkdownConverter } from '@/utils/markdown-converter';
 import { WebDAVClient, type WebDAVConfig } from '@/utils/webdav-client';
 import { contentService } from '@/utils/content-service';
+import { showFileConflictDialog } from '@/utils/file-conflict-handler';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -317,17 +318,37 @@ export default defineContentScript({
         });
 
         const client = new WebDAVClient(webdavConfig);
-        const uploadResult = await client.uploadFile(processedContent.filename, processedContent.content);
+        
+        try {
+          // 先尝试上传，不覆盖
+          let uploadResult = await client.uploadFile(processedContent.filename, processedContent.content, false);
+          
+          // 如果文件已存在，显示冲突处理对话框
+          if (!uploadResult.success && uploadResult.fileExists) {
+            const conflictResult = await showFileConflictDialog(processedContent.filename);
+            
+            if (conflictResult.action === 'cancel') {
+              showMessage('用户取消了上传', 'success');
+              return;
+            }
+            
+            if (conflictResult.action === 'overwrite') {
+              // 覆盖文件
+              uploadResult = await client.uploadFile(processedContent.filename, processedContent.content, true);
+            } else if (conflictResult.action === 'rename' && conflictResult.newFilename) {
+              // 使用新文件名
+              uploadResult = await client.uploadFile(conflictResult.newFilename, processedContent.content, false);
+            }
+          }
 
-        if (uploadResult.success) {
-          if (uploadResult.cancelled) {
-            showMessage('用户取消了上传', 'success');
-          } else {
+          if (uploadResult.success) {
             showMessage('保存到WebDAV成功', 'success');
             closePreviewModal();
+          } else {
+            showMessage(`保存到WebDAV失败: ${uploadResult.error || '未知错误'}`, 'error');
           }
-        } else {
-          showMessage(`保存到WebDAV失败: ${uploadResult.error || '未知错误'}`, 'error');
+        } catch (error) {
+          showMessage(`保存到WebDAV失败: ${error}`, 'error');
         }
       } catch (error) {
         showMessage('保存到WebDAV失败', 'error');
