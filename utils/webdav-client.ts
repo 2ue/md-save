@@ -1,3 +1,5 @@
+import { AuthType, createClient, WebDAVClient as WebDAVClientType } from 'webdav';
+
 export interface WebDAVConfig {
   url: string;
   username: string;
@@ -7,30 +9,39 @@ export interface WebDAVConfig {
 
 export class WebDAVClient {
   private config: WebDAVConfig;
+  private client: WebDAVClientType;
 
   constructor(config: WebDAVConfig) {
     this.config = config;
-  }
-
-  private getAuthHeader(): string {
-    const credentials = btoa(`${this.config.username}:${this.config.password}`);
-    return `Basic ${credentials}`;
+    this.client = createClient(config.url, {
+      authType: AuthType.Auto, // Auto-detect auth type (Basic/Digest)
+      username: config.username,
+      password: config.password
+    });
   }
 
   async uploadFile(filename: string, content: string): Promise<boolean> {
     try {
-      const url = `${this.config.url}${this.config.path || ''}/${filename}`;
-
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Authorization': this.getAuthHeader(),
-          'Content-Type': 'text/markdown; charset=utf-8'
-        },
-        body: content
+      const basePath = this.config.path || '/';
+      const normalizedPath = basePath.endsWith('/') ? basePath : `${basePath}/`;
+      const filePath = `${normalizedPath}${filename}`;
+      
+      // Ensure directory exists
+      const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+      if (dirPath && dirPath !== '/') {
+        try {
+          await this.client.createDirectory(dirPath, { recursive: true });
+        } catch (error) {
+          // Directory might already exist, ignore error
+        }
+      }
+      
+      await this.client.putFileContents(filePath, content, {
+        contentLength: false, // Let the client calculate content length
+        overwrite: true
       });
-
-      return response.ok;
+      
+      return true;
     } catch (error) {
       console.error('WebDAV upload failed:', error);
       return false;
@@ -39,15 +50,9 @@ export class WebDAVClient {
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await fetch(this.config.url, {
-        method: 'PROPFIND',
-        headers: {
-          'Authorization': this.getAuthHeader(),
-          'Depth': '0'
-        }
-      });
-
-      return response.ok;
+      // Test connection by getting server info or directory listing
+      await this.client.getDirectoryContents('/');
+      return true;
     } catch (error) {
       console.error('WebDAV connection test failed:', error);
       return false;
