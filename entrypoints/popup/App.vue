@@ -129,13 +129,17 @@ async function saveToWebDAV() {
 
   isLoading.value = true;
   const client = new WebDAVClient(config.webdav);
-  const success = await client.uploadFile(processedContent.value.filename, processedContent.value.content);
+  const result = await client.uploadFile(processedContent.value.filename, processedContent.value.content);
   isLoading.value = false;
 
-  if (success) {
-    showMessage('保存到WebDAV成功');
+  if (result.success) {
+    if (result.cancelled) {
+      showMessage('用户取消了上传');
+    } else {
+      showMessage(`保存到WebDAV成功${result.finalPath ? `: ${result.finalPath}` : ''}`);
+    }
   } else {
-    showMessage('保存到WebDAV失败', 'error');
+    showMessage(`保存到WebDAV失败: ${result.error || '未知错误'}`, 'error');
   }
 }
 

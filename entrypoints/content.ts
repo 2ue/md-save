@@ -300,8 +300,8 @@ export default defineContentScript({
     // 保存到WebDAV
     async function saveToWebDAV(content: any) {
       try {
-        const result = await browser.storage.local.get('extensionConfig');
-        const webdavConfig: WebDAVConfig = result.extensionConfig?.webdav;
+        const storageResult = await browser.storage.local.get('extensionConfig');
+        const webdavConfig: WebDAVConfig = storageResult.extensionConfig?.webdav;
 
         if (!webdavConfig || !webdavConfig.url || !webdavConfig.username || !webdavConfig.password) {
           showMessage('请先在插件中配置WebDAV', 'error');
@@ -317,13 +317,17 @@ export default defineContentScript({
         });
 
         const client = new WebDAVClient(webdavConfig);
-        const success = await client.uploadFile(processedContent.filename, processedContent.content);
+        const uploadResult = await client.uploadFile(processedContent.filename, processedContent.content);
 
-        if (success) {
-          showMessage('保存到WebDAV成功', 'success');
-          closePreviewModal();
+        if (uploadResult.success) {
+          if (uploadResult.cancelled) {
+            showMessage('用户取消了上传', 'success');
+          } else {
+            showMessage('保存到WebDAV成功', 'success');
+            closePreviewModal();
+          }
         } else {
-          showMessage('保存到WebDAV失败', 'error');
+          showMessage(`保存到WebDAV失败: ${uploadResult.error || '未知错误'}`, 'error');
         }
       } catch (error) {
         showMessage('保存到WebDAV失败', 'error');
