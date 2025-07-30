@@ -317,11 +317,17 @@ export default defineContentScript({
           timestamp: content.timestamp
         });
 
-        const client = new WebDAVClient(webdavConfig);
-        
         try {
-          // 先尝试上传，不覆盖
-          let uploadResult = await client.uploadFile(processedContent.filename, processedContent.content, false);
+          // 通过后台脚本上传，先不覆盖
+          let uploadResult = await browser.runtime.sendMessage({
+            type: 'WEBDAV_UPLOAD',
+            data: {
+              filename: processedContent.filename,
+              content: processedContent.content,
+              webdavConfig,
+              overwrite: false
+            }
+          });
           
           // 如果文件已存在，显示冲突处理对话框
           if (!uploadResult.success && uploadResult.fileExists) {
@@ -334,10 +340,26 @@ export default defineContentScript({
             
             if (conflictResult.action === 'overwrite') {
               // 覆盖文件
-              uploadResult = await client.uploadFile(processedContent.filename, processedContent.content, true);
+              uploadResult = await browser.runtime.sendMessage({
+                type: 'WEBDAV_UPLOAD',
+                data: {
+                  filename: processedContent.filename,
+                  content: processedContent.content,
+                  webdavConfig,
+                  overwrite: true
+                }
+              });
             } else if (conflictResult.action === 'rename' && conflictResult.newFilename) {
               // 使用新文件名
-              uploadResult = await client.uploadFile(conflictResult.newFilename, processedContent.content, false);
+              uploadResult = await browser.runtime.sendMessage({
+                type: 'WEBDAV_UPLOAD',
+                data: {
+                  filename: conflictResult.newFilename,
+                  content: processedContent.content,
+                  webdavConfig,
+                  overwrite: false
+                }
+              });
             }
           }
 
