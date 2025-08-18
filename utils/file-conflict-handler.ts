@@ -3,7 +3,7 @@
  */
 
 export interface FileConflictResult {
-  action: 'overwrite' | 'rename' | 'cancel';
+  action: 'rename' | 'cancel';
   newFilename?: string;
 }
 
@@ -40,8 +40,18 @@ export function showFileConflictDialog(filename: string): Promise<FileConflictRe
     dialog.innerHTML = `
       <h3 style="margin: 0 0 16px 0; color: #333; font-size: 18px;">文件已存在</h3>
       <p style="margin: 0 0 20px 0; color: #666; line-height: 1.5;">
-        文件 "${filename}" 已存在，请选择处理方式：
+        文件 "${filename}" 已存在，请输入新的文件名：
       </p>
+      <div style="margin-bottom: 20px;">
+        <input type="text" id="newFilename" value="${filename}" style="
+          width: 100%;
+          padding: 8px 12px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-size: 14px;
+          box-sizing: border-box;
+        ">
+      </div>
       <div style="display: flex; gap: 12px; justify-content: flex-end;">
         <button id="cancel" style="
           padding: 8px 16px;
@@ -53,22 +63,13 @@ export function showFileConflictDialog(filename: string): Promise<FileConflictRe
         ">取消</button>
         <button id="rename" style="
           padding: 8px 16px;
-          border: 1px solid #007bff;
-          background: white;
-          color: #007bff;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 14px;
-        ">重命名</button>
-        <button id="overwrite" style="
-          padding: 8px 16px;
           border: none;
           background: #007bff;
           color: white;
           border-radius: 4px;
           cursor: pointer;
           font-size: 14px;
-        ">覆盖</button>
+        ">确认重命名</button>
       </div>
     `;
 
@@ -82,20 +83,34 @@ export function showFileConflictDialog(filename: string): Promise<FileConflictRe
       }
     };
 
+    const newFilenameInput = dialog.querySelector('#newFilename') as HTMLInputElement;
+
     dialog.querySelector('#cancel')?.addEventListener('click', () => {
       cleanup();
       resolve({ action: 'cancel' });
     });
 
-    dialog.querySelector('#overwrite')?.addEventListener('click', () => {
+    dialog.querySelector('#rename')?.addEventListener('click', () => {
+      const newFilename = newFilenameInput.value.trim();
+      if (!newFilename) {
+        alert('请输入有效的文件名');
+        return;
+      }
       cleanup();
-      resolve({ action: 'overwrite' });
+      resolve({ action: 'rename', newFilename });
     });
 
-    dialog.querySelector('#rename')?.addEventListener('click', () => {
-      cleanup();
-      const newFilename = generateNewFilename(filename);
-      resolve({ action: 'rename', newFilename });
+    // 回车键确认重命名
+    newFilenameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const newFilename = newFilenameInput.value.trim();
+        if (!newFilename) {
+          alert('请输入有效的文件名');
+          return;
+        }
+        cleanup();
+        resolve({ action: 'rename', newFilename });
+      }
     });
 
     // ESC键取消
@@ -107,21 +122,16 @@ export function showFileConflictDialog(filename: string): Promise<FileConflictRe
       }
     };
     document.addEventListener('keydown', handleKeydown);
-  });
-}
 
-/**
- * 生成新的文件名（添加时间戳）
- */
-export function generateNewFilename(filename: string): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  const lastDotIndex = filename.lastIndexOf('.');
-  
-  if (lastDotIndex === -1) {
-    return `${filename}_${timestamp}`;
-  }
-  
-  const name = filename.substring(0, lastDotIndex);
-  const ext = filename.substring(lastDotIndex);
-  return `${name}_${timestamp}${ext}`;
+    // 自动选中文件名（不包含扩展名）
+    setTimeout(() => {
+      const lastDotIndex = filename.lastIndexOf('.');
+      if (lastDotIndex > 0) {
+        newFilenameInput.setSelectionRange(0, lastDotIndex);
+      } else {
+        newFilenameInput.select();
+      }
+      newFilenameInput.focus();
+    }, 100);
+  });
 }

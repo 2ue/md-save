@@ -1,9 +1,7 @@
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { MousePointer, FileText, History, Settings, Download, Cloud } from 'lucide-vue-next';
 import { contentService, type ProcessedContent } from '@/utils/content-service';
-import { WebDAVClient } from '@/utils/webdav-client';
-import { showFileConflictDialog } from '@/utils/file-conflict-handler';
 
 interface ExtractedContent {
   html: string;
@@ -18,6 +16,28 @@ const currentTab = ref<any | null>(null);
 const extractedContent = ref<ExtractedContent | null>(null);
 const processedContent = ref<ProcessedContent | null>(null);
 const message = ref('');
+
+// 新增：可编辑的文件名和错误状态
+const editableFilename = ref('');
+const filenameError = ref('');
+
+// 计算属性：文件名是否有效
+const isFilenameValid = computed(() => {
+  return editableFilename.value.trim() && !filenameError.value;
+});
+
+// 监听processedContent变化，更新可编辑文件名
+watch(processedContent, (newVal) => {
+  if (newVal) {
+    editableFilename.value = newVal.filename;
+    filenameError.value = '';
+  }
+});
+
+// 清除文件名错误
+function clearFilenameError() {
+  filenameError.value = '';
+}
 
 onMounted(async () => {
   // Get current active tab
@@ -95,7 +115,7 @@ async function saveFullPage() {
 }
 
 async function downloadLocal() {
-  if (!processedContent.value) return;
+  if (!processedContent.value || !isFilenameValid.value) return;
 
   const config = contentService.getConfig();
   const downloadPath = config.downloadDirectory === 'custom' && config.customDownloadPath
@@ -106,7 +126,7 @@ async function downloadLocal() {
     await browser.runtime.sendMessage({
       type: 'DOWNLOAD_FILE',
       data: {
-        filename: processedContent.value.filename,
+        filename: editableFilename.value, // 使用用户输入的文件名
         content: processedContent.value.content,
         downloadPath
       }
@@ -118,7 +138,7 @@ async function downloadLocal() {
 }
 
 async function saveToWebDAV() {
-  if (!processedContent.value) return;
+  if (!processedContent.value || !isFilenameValid.value) return;
 
   const config = contentService.getConfig();
   
@@ -128,42 +148,40 @@ async function saveToWebDAV() {
     return;
   }
 
+  // 清除之前的错误
+  filenameError.value = '';
   isLoading.value = true;
-  const client = new WebDAVClient(config.webdav);
   
   try {
-    // 先尝试上传，不覆盖
-    let result = await client.uploadFile(processedContent.value.filename, processedContent.value.content, false);
+    // 使用当前输入的文件名进行上传
+    const uploadResult = await browser.runtime.sendMessage({
+      type: 'WEBDAV_UPLOAD',
+      data: {
+        filename: editableFilename.value,
+        content: processedContent.value.content,
+        webdavConfig: config.webdav,
+        overwrite: false  // 总是不覆盖，让webdav包检测冲突
+      }
+    });
     
-    // 如果文件已存在，显示冲突处理对话框
-    if (!result.success && result.fileExists) {
-      const conflictResult = await showFileConflictDialog(processedContent.value.filename);
-      
-      if (conflictResult.action === 'cancel') {
-        showMessage('用户取消了上传');
-        isLoading.value = false;
-        return;
-      }
-      
-      if (conflictResult.action === 'overwrite') {
-        // 覆盖文件
-        result = await client.uploadFile(processedContent.value.filename, processedContent.value.content, true);
-      } else if (conflictResult.action === 'rename' && conflictResult.newFilename) {
-        // 使用新文件名
-        result = await client.uploadFile(conflictResult.newFilename, processedContent.value.content, false);
-      }
+    // 检查响应是否有效
+    if (!uploadResult) {
+      throw new Error('未收到来自background script的响应');
     }
-
+    
     isLoading.value = false;
 
-    if (result.success) {
-      showMessage(`保存到WebDAV成功${result.finalPath ? `: ${result.finalPath}` : ''}`);
+    if (uploadResult.success) {
+      showMessage(`保存到WebDAV成功${uploadResult.finalPath ? `: ${uploadResult.finalPath}` : ''}`);
+    } else if (uploadResult.fileExists) {
+      // 文件已存在，显示内联错误提示
+      filenameError.value = '文件已存在，请修改文件名';
     } else {
-      showMessage(`保存到WebDAV失败: ${result.error || '未知错误'}`, 'error');
+      showMessage(`保存到WebDAV失败: ${uploadResult.error || '未知错误'}`, 'error');
     }
   } catch (error) {
     isLoading.value = false;
-    showMessage('保存到WebDAV失败', 'error');
+    showMessage(`保存到WebDAV失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
   }
 }
 
@@ -262,10 +280,25 @@ function openSettings() {
     <!-- Content preview and save options -->
     <div v-if="processedContent" class="space-y-4">
       <div class="border-t border-gray-200 pt-4">
-        <h3 class="text-sm font-medium text-gray-900 mb-2">内容预览</h3>
-        <div class="text-xs text-gray-600 mb-2">
-          文件名: {{ processedContent.filename }}
+        <h3 class="text-sm font-medium text-gray-900 mb-3">内容预览</h3>
+        
+        <!-- 文件名输入框 -->
+        <div class="mb-3">
+          <label class="block text-xs font-medium text-gray-700 mb-1">文件名</label>
+          <input 
+            v-model="editableFilename"
+            @input="clearFilenameError"
+            :class="[
+              'w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500',
+              filenameError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+            ]"
+            placeholder="请输入文件名"
+          >
+          <div v-if="filenameError" class="mt-1 text-xs text-red-600">
+            {{ filenameError }}
+          </div>
         </div>
+        
         <div class="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-40 overflow-y-auto">
           <pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono">{{ processedContent.content }}</pre>
         </div>
@@ -274,7 +307,7 @@ function openSettings() {
       <div class="flex flex-col gap-2">
         <button
           @click="downloadLocal"
-          :disabled="isLoading"
+          :disabled="isLoading || !isFilenameValid"
           class="flex items-center gap-3 p-3 bg-green-600 text-white rounded-lg hover:bg-green-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Download class="w-5 h-5" />
@@ -285,7 +318,7 @@ function openSettings() {
 
         <button
           @click="saveToWebDAV"
-          :disabled="isLoading"
+          :disabled="isLoading || !isFilenameValid"
           class="flex items-center gap-3 p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Cloud class="w-5 h-5" />

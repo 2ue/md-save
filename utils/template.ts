@@ -20,10 +20,12 @@ export function generateTemplateData(extractedContent: {
   markdown: string;
   timestamp: string;
 }): TemplateData {
+  console.log('[Template] generateTemplateData input:', JSON.stringify(extractedContent, null, 2));
+  
   const url = new URL(extractedContent.url);
   const date = new Date(extractedContent.timestamp);
   
-  return {
+  const result = {
     title: extractedContent.title || 'Untitled',
     url: extractedContent.url,
     domain: url.hostname,
@@ -31,24 +33,34 @@ export function generateTemplateData(extractedContent: {
     time: date.toISOString().split('T')[1].split('.')[0], // HH:MM:SS
     content: extractedContent.markdown
   };
+  
+  console.log('[Template] generateTemplateData result:', JSON.stringify(result, null, 2));
+  return result;
 }
 
 /**
  * Replace template variables in a string using {{variable}} syntax
  */
 export function replaceTemplateVariables(templateString: string, data: TemplateData): string {
+  console.log('[Template] replaceTemplateVariables input - template:', templateString, 'data keys:', Object.keys(data));
+  
   try {
     let result = templateString;
     
     // Replace {{variable}} patterns with actual data
     Object.entries(data).forEach(([key, value]) => {
       const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      const beforeReplace = result;
       result = result.replace(regex, String(value || ''));
+      if (beforeReplace !== result) {
+        console.log(`[Template] Replaced {{${key}}} with:`, value);
+      }
     });
     
+    console.log('[Template] replaceTemplateVariables result:', result);
     return result;
   } catch (error) {
-    console.error('Template processing failed:', error);
+    console.error('[Template] Template processing failed:', error);
     return templateString;
   }
 }
@@ -57,7 +69,10 @@ export function replaceTemplateVariables(templateString: string, data: TemplateD
  * Generate filename from template
  */
 export function generateFilename(titleTemplate: string, data: TemplateData): string {
+  console.log('[Template] generateFilename input - template:', titleTemplate, 'data:', JSON.stringify(data, null, 2));
+  
   const filename = replaceTemplateVariables(titleTemplate, data);
+  console.log('[Template] generateFilename after template replacement:', filename);
   
   // Clean up filename - remove invalid characters
   const cleanFilename = filename
@@ -67,8 +82,13 @@ export function generateFilename(titleTemplate: string, data: TemplateData): str
     .replace(/_+/g, '_') // Replace multiple underscores with single underscore
     .trim();
   
+  console.log('[Template] generateFilename after cleanup:', cleanFilename);
+  
   // Ensure filename ends with .md
-  return cleanFilename.endsWith('.md') ? cleanFilename : `${cleanFilename}.md`;
+  const finalFilename = cleanFilename.endsWith('.md') ? cleanFilename : `${cleanFilename}.md`;
+  console.log('[Template] generateFilename final result:', finalFilename);
+  
+  return finalFilename;
 }
 
 /**

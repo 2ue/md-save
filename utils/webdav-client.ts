@@ -131,41 +131,61 @@ export class WebDAVClient {
    * @param overwrite 是否覆盖已存在文件，默认false
    */
   async uploadFile(filename: string, content: string, overwrite: boolean = false): Promise<UploadResult> {
+    console.log('WebDAV uploadFile called:', { filename, overwrite, contentLength: content.length });
     try {
-      // 1. 检查文件是否存在
-      const fileExists = await this.checkFileExists(filename);
-      
-      if (fileExists && !overwrite) {
-        return { 
-          success: false, 
-          fileExists: true 
-        };
-      }
+      const { directory, filename: file } = this.parseFilePath(filename);
+      const fullPath = `${directory}${file}`;
+      console.log('Parsed path:', { directory, file, fullPath });
 
-      // 2. 检查并创建目录
-      const { directory } = this.parseFilePath(filename);
+      // 1. 检查并创建目录
+      console.log('Ensuring directory exists:', directory);
       const dirCreated = await this.ensureDirectory(directory);
+      console.log('Directory creation result:', dirCreated);
       
       if (!dirCreated) {
+        console.log('Failed to create directory, returning error');
         return { 
           success: false, 
           error: `Failed to create directory: ${directory}` 
         };
       }
 
-      // 3. 上传文件
-      const { directory: dir, filename: file } = this.parseFilePath(filename);
-      const fullPath = `${dir}${file}`;
-      
-      await this.client.putFileContents(fullPath, content, {
-        contentLength: false,
-        overwrite: true
+      // 2. 尝试上传文件，webdav包返回布尔值表示是否成功写入
+      console.log('Starting WebDAV upload with options:', { 
+        path: fullPath, 
+        overwrite, 
+        contentLength: true 
       });
+      
+      const uploadSuccess = await this.client.putFileContents(fullPath, content, {
+        contentLength: true,
+        overwrite: overwrite  // 直接使用传入的overwrite参数
+      });
+      
+      console.log('WebDAV putFileContents result:', uploadSuccess);
+      
+      // webdav包在overwrite:false且文件存在时返回false，否则返回true
+      if (uploadSuccess) {
+        console.log('Upload successful');
+        return { success: true, finalPath: fullPath };
+      } else {
+        console.log('Upload failed - file exists and overwrite=false');
+        return { 
+          success: false, 
+          fileExists: true 
+        };
+      }
 
-      return { success: true, finalPath: fullPath };
-
-    } catch (error) {
-      console.error('WebDAV upload failed:', error);
+    } catch (error: any) {
+      console.error('WebDAV upload error details:', {
+        error,
+        status: error.status,
+        message: error.message,
+        overwrite,
+        filename
+      });
+      
+      console.log('Returning general error:', error.message);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : String(error) 

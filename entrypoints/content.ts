@@ -2,7 +2,6 @@ import { ContentExtractor } from '@/utils/content-extractor';
 import { MarkdownConverter } from '@/utils/markdown-converter';
 import { WebDAVClient, type WebDAVConfig } from '@/utils/webdav-client';
 import { contentService } from '@/utils/content-service';
-import { showFileConflictDialog } from '@/utils/file-conflict-handler';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -188,10 +187,29 @@ export default defineContentScript({
           <button id="close-preview" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">&times;</button>
         </div>
 
+        <!-- 文件名输入框 -->
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500; color: #333;">文件名</label>
+          <input type="text" id="filename-input" value="${processedContent.filename}" style="
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+          ">
+          <div id="filename-error" style="
+            margin-top: 4px;
+            font-size: 12px;
+            color: #dc3545;
+            display: none;
+          "></div>
+        </div>
+
         <div style="margin-bottom: 16px;">
           <textarea readonly style="
             width: 100%;
-            height: 400px;
+            height: 300px;
             border: 1px solid #ddd;
             border-radius: 4px;
             padding: 12px;
@@ -244,12 +262,49 @@ export default defineContentScript({
       const saveLocalBtn = modalContent.querySelector('#save-local');
       const saveWebdavBtn = modalContent.querySelector('#save-webdav');
       const cancelBtn = modalContent.querySelector('#cancel-save');
+      const filenameInput = modalContent.querySelector('#filename-input') as HTMLInputElement;
+      const filenameError = modalContent.querySelector('#filename-error') as HTMLDivElement;
+
+      // 清除文件名错误的函数
+      const clearFilenameError = () => {
+        filenameInput.style.borderColor = '#ddd';
+        filenameInput.style.backgroundColor = 'white';
+        filenameError.style.display = 'none';
+      };
+
+      // 显示文件名错误的函数
+      const showFilenameError = (message: string) => {
+        filenameInput.style.borderColor = '#dc3545';
+        filenameInput.style.backgroundColor = '#fff5f5';
+        filenameError.textContent = message;
+        filenameError.style.display = 'block';
+      };
+
+      // 输入时清除错误
+      filenameInput.addEventListener('input', clearFilenameError);
 
       closeBtn?.addEventListener('click', () => closePreviewModal());
       cancelBtn?.addEventListener('click', () => closePreviewModal());
 
-      saveLocalBtn?.addEventListener('click', () => saveToLocal(content));
-      saveWebdavBtn?.addEventListener('click', () => saveToWebDAV(content));
+      saveLocalBtn?.addEventListener('click', () => {
+        const filename = filenameInput.value.trim();
+        if (!filename) {
+          showFilenameError('请输入文件名');
+          return;
+        }
+        clearFilenameError();
+        saveToLocal(content, filename);
+      });
+
+      saveWebdavBtn?.addEventListener('click', () => {
+        const filename = filenameInput.value.trim();
+        if (!filename) {
+          showFilenameError('请输入文件名');
+          return;
+        }
+        clearFilenameError();
+        saveToWebDAV(content, filename, filenameInput, showFilenameError);
+      });
 
       // 点击背景关闭
       modal.addEventListener('click', (e) => {
@@ -270,7 +325,7 @@ export default defineContentScript({
     }
 
     // 保存到本地
-    async function saveToLocal(content: any) {
+    async function saveToLocal(content: any, filename: string) {
       try {
         // Process content using ContentService and templates
         const processedContent = await contentService.processContent({
@@ -280,12 +335,12 @@ export default defineContentScript({
           timestamp: content.timestamp
         });
 
-        // Create download link
+        // Create download link using user-provided filename
         const blob = new Blob([processedContent.content], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = processedContent.filename;
+        a.download = filename; // 使用用户输入的文件名
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -299,7 +354,12 @@ export default defineContentScript({
     }
 
     // 保存到WebDAV
-    async function saveToWebDAV(content: any) {
+    async function saveToWebDAV(
+      content: any, 
+      filename: string, 
+      filenameInput: HTMLInputElement, 
+      showFilenameError: (message: string) => void
+    ) {
       try {
         const storageResult = await browser.storage.local.get('extensionConfig');
         const webdavConfig: WebDAVConfig = storageResult.extensionConfig?.webdav;
@@ -318,59 +378,33 @@ export default defineContentScript({
         });
 
         try {
-          // 通过后台脚本上传，先不覆盖
-          let uploadResult = await browser.runtime.sendMessage({
+          // 通过后台脚本上传，不覆盖已存在文件
+          const uploadResult = await browser.runtime.sendMessage({
             type: 'WEBDAV_UPLOAD',
             data: {
-              filename: processedContent.filename,
+              filename: filename, // 使用用户输入的文件名
               content: processedContent.content,
               webdavConfig,
-              overwrite: false
+              overwrite: false  // 总是不覆盖，让webdav包检测冲突
             }
           });
           
-          // 如果文件已存在，显示冲突处理对话框
-          if (!uploadResult.success && uploadResult.fileExists) {
-            const conflictResult = await showFileConflictDialog(processedContent.filename);
-            
-            if (conflictResult.action === 'cancel') {
-              showMessage('用户取消了上传', 'success');
-              return;
-            }
-            
-            if (conflictResult.action === 'overwrite') {
-              // 覆盖文件
-              uploadResult = await browser.runtime.sendMessage({
-                type: 'WEBDAV_UPLOAD',
-                data: {
-                  filename: processedContent.filename,
-                  content: processedContent.content,
-                  webdavConfig,
-                  overwrite: true
-                }
-              });
-            } else if (conflictResult.action === 'rename' && conflictResult.newFilename) {
-              // 使用新文件名
-              uploadResult = await browser.runtime.sendMessage({
-                type: 'WEBDAV_UPLOAD',
-                data: {
-                  filename: conflictResult.newFilename,
-                  content: processedContent.content,
-                  webdavConfig,
-                  overwrite: false
-                }
-              });
-            }
+          // 检查响应是否有效
+          if (!uploadResult) {
+            throw new Error('未收到来自background script的响应');
           }
-
+          
           if (uploadResult.success) {
             showMessage('保存到WebDAV成功', 'success');
             closePreviewModal();
+          } else if (uploadResult.fileExists) {
+            // 文件已存在，显示内联错误提示
+            showFilenameError('文件已存在，请修改文件名');
           } else {
             showMessage(`保存到WebDAV失败: ${uploadResult.error || '未知错误'}`, 'error');
           }
         } catch (error) {
-          showMessage(`保存到WebDAV失败: ${error}`, 'error');
+          showMessage(`保存到WebDAV失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
         }
       } catch (error) {
         showMessage('保存到WebDAV失败', 'error');
