@@ -4,10 +4,10 @@ export interface WebDAVConfig {
   username: string;
   password: string;
   path: string;
+  authType: 'basic' | 'digest';
 }
 
 export interface ExtensionConfig {
-  saveMethod: 'local' | 'webdav';
   downloadDirectory: 'default' | 'custom';
   customDownloadPath: string;
   titleTemplate: string;
@@ -16,7 +16,6 @@ export interface ExtensionConfig {
 }
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
-  saveMethod: 'local',
   downloadDirectory: 'default',
   customDownloadPath: '',
   titleTemplate: '{{title}}',
@@ -30,8 +29,7 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     url: '',
     username: '',
     password: '',
-    path: '/'
+    path: '/',
+    authType: 'basic'
   }
 };
-
-export type SaveMethod = ExtensionConfig['saveMethod'];

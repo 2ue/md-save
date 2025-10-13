@@ -1,11 +1,5 @@
 import { AuthType, createClient, WebDAVClient as WebDAVClientType } from 'webdav';
-
-export interface WebDAVConfig {
-  url: string;
-  username: string;
-  password: string;
-  path?: string;
-}
+import type { WebDAVConfig } from '@/types/config';
 
 export interface UploadResult {
   success: boolean;
@@ -20,8 +14,13 @@ export class WebDAVClient {
 
   constructor(config: WebDAVConfig) {
     this.config = config;
+    // 根据配置选择认证类型
+    // 'basic' 映射到 AuthType.Password (HTTP Basic Authentication)
+    // 'digest' 映射到 AuthType.Digest (HTTP Digest Authentication)
+    const authType = config.authType === 'basic' ? AuthType.Password : AuthType.Digest;
+
     this.client = createClient(config.url, {
-      authType: AuthType.Digest,
+      authType,
       username: config.username,
       password: config.password,
       httpAgent: false,
@@ -108,21 +107,6 @@ export class WebDAVClient {
     }
   }
 
-  /**
-   * 生成新的文件名（添加时间戳）
-   */
-  generateNewFilename(filename: string): string {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const lastDotIndex = filename.lastIndexOf('.');
-    
-    if (lastDotIndex === -1) {
-      return `${filename}_${timestamp}`;
-    }
-    
-    const name = filename.substring(0, lastDotIndex);
-    const ext = filename.substring(lastDotIndex);
-    return `${name}_${timestamp}${ext}`;
-  }
 
   /**
    * 上传文件的主要方法

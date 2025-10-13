@@ -1,0 +1,168 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 7.30.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.20.8'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm compile
+
+      - name: Build Chrome extension
+        run: pnpm build
+
+      - name: Package Chrome extension
+        run: pnpm zip
+
+      - name: Build Firefox extension
+        run: pnpm build:firefox
+
+      - name: Package Firefox extension
+        run: pnpm zip:firefox
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release-artifacts
+
+          # Find and rename the zip files
+          CHROME_ZIP=$(find .output -name "*.zip" -path "*.output/chrome*" | head -n 1)
+          FIREFOX_ZIP=$(find .output -name "*.zip" -path "*.output/firefox*" | head -n 1)
+
+          if [ -n "$CHROME_ZIP" ]; then
+            cp "$CHROME_ZIP" release-artifacts/md-save-chrome.zip
+            echo "✓ Chrome extension packaged"
+          else
+            echo "✗ Chrome zip not found"
+            exit 1
+          fi
+
+          if [ -n "$FIREFOX_ZIP" ]; then
+            cp "$FIREFOX_ZIP" release-artifacts/md-save-firefox.zip
+            echo "✓ Firefox extension packaged"
+          else
+            echo "✗ Firefox zip not found"
+            exit 1
+          fi
+
+          # List artifacts
+          ls -lh release-artifacts/
+
+      - name: Extract version from package.json
+        id: package-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Package version: v$VERSION"
+
+      - name: Determine release version
+        id: release-version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          PACKAGE_VERSION="${{ steps.package-version.outputs.version }}"
+
+          cat > release-notes.md << EOF
+          # MD Save Extension ${VERSION}
+
+          ## 📦 Package Information
+          - **Package Version**: ${PACKAGE_VERSION}
+          - **Release Tag**: ${VERSION}
+          - **Build Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')
+          - **Commit**: ${GITHUB_SHA:0:7}
+
+          ## 🚀 Installation
+
+          ### Chrome/Edge
+          1. Download \`md-save-chrome.zip\`
+          2. Extract the zip file
+          3. Open Chrome/Edge Extensions page (\`chrome://extensions\` or \`edge://extensions\`)
+          4. Enable "Developer mode"
+          5. Click "Load unpacked" and select the extracted folder
+
+          ### Firefox
+          1. Download \`md-save-firefox.zip\`
+          2. Open Firefox Add-ons page (\`about:addons\`)
+          3. Click the gear icon → "Install Add-on From File"
+          4. Select the downloaded zip file
+
+          ## 📝 Changes
+
+          For detailed changes, see the commit history:
+          https://github.com/${{ github.repository }}/commits/${VERSION}
+
+          ## 🔧 Technical Details
+          - Built with WXT Framework
+          - Vue 3 + TypeScript
+          - Supports WebDAV storage
+          - Markdown conversion with Turndown
+
+          ---
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/...${VERSION}
+          EOF
+
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release-version.outputs.version }}
+          name: Release ${{ steps.release-version.outputs.version }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-artifacts/md-save-chrome.zip
+            release-artifacts/md-save-firefox.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-builds-${{ steps.release-version.outputs.version }}
+          path: release-artifacts/
+          retention-days: 90
+          if-no-files-found: error
