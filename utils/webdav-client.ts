@@ -1,6 +1,9 @@
 import { AuthType, createClient, WebDAVClient as WebDAVClientType } from 'webdav';
 import type { WebDAVConfig } from '@/types/config';
 
+// Re-export WebDAVConfig for convenience
+export type { WebDAVConfig };
+
 export interface UploadResult {
   success: boolean;
   finalPath?: string;

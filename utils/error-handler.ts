@@ -166,9 +166,21 @@ export function getErrorHint(code: ErrorCode): string[] {
       '2. 确认网络连接是否正常',
       '3. 检查防火墙或代理设置'
     ],
+    [ErrorCode.TIMEOUT]: [
+      '1. 检查网络连接速度',
+      '2. 稍后重试'
+    ],
     [ErrorCode.FILE_EXISTS]: [
       '1. 修改文件名',
       '2. 或删除服务器上的同名文件'
+    ],
+    [ErrorCode.DIRECTORY_CREATE_FAILED]: [
+      '1. 检查 WebDAV 服务器权限',
+      '2. 确认路径格式正确'
+    ],
+    [ErrorCode.UPLOAD_FAILED]: [
+      '1. 检查 WebDAV 连接',
+      '2. 确认服务器空间充足'
     ],
     [ErrorCode.INVALID_CONFIG]: [
       '1. 打开设置页面',
@@ -179,6 +191,28 @@ export function getErrorHint(code: ErrorCode): string[] {
       '1. 打开设置页面',
       '2. 完善 WebDAV 配置',
       '3. 确保填写服务器地址、用户名和密码'
+    ],
+    [ErrorCode.CONTENT_EXTRACT_FAILED]: [
+      '1. 刷新页面后重试',
+      '2. 尝试选择其他区域'
+    ],
+    [ErrorCode.CONTENT_PROCESS_FAILED]: [
+      '1. 检查模板配置',
+      '2. 稍后重试'
+    ],
+    [ErrorCode.DOWNLOAD_FAILED]: [
+      '1. 检查浏览器下载权限',
+      '2. 稍后重试'
+    ],
+    [ErrorCode.FILE_READ_FAILED]: [
+      '1. 检查文件权限',
+      '2. 稍后重试'
+    ],
+    [ErrorCode.OPERATION_CANCELLED]: [
+      '操作已取消'
+    ],
+    [ErrorCode.UNKNOWN]: [
+      '请稍后重试，或联系技术支持'
     ]
   };
 

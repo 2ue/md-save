@@ -78,14 +78,6 @@ export function validateExtensionConfig(config: ExtensionConfig): ValidationResu
     errors.push('内容模板不能为空');
   }
 
-  // 如果保存方式是 WebDAV，验证 WebDAV 配置
-  if (config.saveMethod === 'webdav') {
-    const webdavResult = validateWebDAVConfig(config.webdav);
-    if (!webdavResult.valid) {
-      errors.push(...webdavResult.errors);
-    }
-  }
-
   // 如果使用自定义下载目录，验证路径
   if (config.downloadDirectory === 'custom') {
     if (!config.customDownloadPath?.trim()) {

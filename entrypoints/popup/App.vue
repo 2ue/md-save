@@ -15,22 +15,20 @@ onMounted(async () => {
 
 // 显示消息
 function showMessage(msg: string, type: 'success' | 'error' = 'success') {
-  message.value = msg;
-  
   // Create toast notification
   const toast = document.createElement('div');
   toast.className = `fixed top-6 right-6 px-4 py-3 rounded-lg font-medium z-50 transition-all duration-300 transform translate-x-full ${
     type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
   }`;
   toast.textContent = msg;
-  
+
   document.body.appendChild(toast);
-  
+
   // Animate in
   requestAnimationFrame(() => {
     toast.style.transform = 'translateX(0)';
   });
-  
+
   // Auto remove after 3 seconds
   setTimeout(() => {
     toast.style.transform = 'translateX(100%)';
@@ -39,7 +37,6 @@ function showMessage(msg: string, type: 'success' | 'error' = 'success') {
         document.body.removeChild(toast);
       }
     }, 300);
-    message.value = '';
   }, 3000);
 }
 
@@ -157,7 +154,7 @@ function openSettings() {
     </div>
 
     <!-- Invalid page notice -->
-    <div v-if="!isValidPage && !processedContent" class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+    <div v-if="!isValidPage" class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
       <div class="text-sm text-yellow-800">
         <div class="font-medium mb-1">⚠️ 此页面不支持内容提取</div>
         <div class="text-xs">请在普通网页(http/https)中使用本插件</div>
