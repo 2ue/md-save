@@ -57,13 +57,13 @@ jobs:
         run: |
           mkdir -p release-artifacts
 
-          # Find and rename the zip files
-          CHROME_ZIP=$(find .output -name "*.zip" -path "*.output/chrome*" | head -n 1)
-          FIREFOX_ZIP=$(find .output -name "*.zip" -path "*.output/firefox*" | head -n 1)
+          # Find and rename the zip files (WXT generates them in .output root)
+          CHROME_ZIP=$(find .output -maxdepth 1 -name "*-chrome.zip" -type f | head -n 1)
+          FIREFOX_ZIP=$(find .output -maxdepth 1 -name "*-firefox.zip" -type f | head -n 1)
 
           if [ -n "$CHROME_ZIP" ]; then
             cp "$CHROME_ZIP" release-artifacts/md-save-chrome.zip
-            echo "✓ Chrome extension packaged"
+            echo "✓ Chrome extension packaged: $CHROME_ZIP"
           else
             echo "✗ Chrome zip not found"
             exit 1
@@ -71,13 +71,14 @@ jobs:
 
           if [ -n "$FIREFOX_ZIP" ]; then
             cp "$FIREFOX_ZIP" release-artifacts/md-save-firefox.zip
-            echo "✓ Firefox extension packaged"
+            echo "✓ Firefox extension packaged: $FIREFOX_ZIP"
           else
             echo "✗ Firefox zip not found"
             exit 1
           fi
 
           # List artifacts
+          echo "=== Release artifacts ==="
           ls -lh release-artifacts/
 
       - name: Extract version from package.json
