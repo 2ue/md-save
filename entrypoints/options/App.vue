@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted, computed } from 'vue';
-import { Save, TestTube, Settings, FileText, Cloud, HardDrive, Eye, EyeOff } from 'lucide-vue-next';
+import { Save, TestTube, Settings, FileText, Cloud, HardDrive, Eye, EyeOff, Upload, Download } from 'lucide-vue-next';
 import type { ExtensionConfig } from '../../types';
 import { DEFAULT_CONFIG } from '../../types/config';
 
@@ -8,14 +8,20 @@ const config = reactive<ExtensionConfig>({ ...DEFAULT_CONFIG });
 const isLoading = ref(false);
 const isSaving = ref(false);
 const isTestingWebDAV = ref(false);
+const isUploadingConfig = ref(false);
+const isDownloadingConfig = ref(false);
 const showPassword = ref(false);
 const webdavTestResult = ref<{ success?: boolean; message?: string } | null>(null);
 const saveMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
 
 const isWebDAVValid = computed(() => {
-  return config.webdav.url.trim() && 
-         config.webdav.username.trim() && 
+  return config.webdav.url.trim() &&
+         config.webdav.username.trim() &&
          config.webdav.password.trim();
+});
+
+const isConfigSyncValid = computed(() => {
+  return isWebDAVValid.value && config.configSyncDir?.trim();
 });
 
 onMounted(async () => {
@@ -163,6 +169,71 @@ function showMessage(type: 'success' | 'error', text: string) {
 
 function togglePasswordVisibility() {
   showPassword.value = !showPassword.value;
+}
+
+async function uploadConfigToWebDAV() {
+  if (!isConfigSyncValid.value) {
+    showMessage('error', '请先配置 WebDAV 和配置同步目录');
+    return;
+  }
+
+  if (!confirm('确定要上传配置到 WebDAV 吗？这将覆盖远程已存在的配置文件。')) {
+    return;
+  }
+
+  isUploadingConfig.value = true;
+  try {
+    // 先保存当前配置
+    await browser.storage.local.set({ extensionConfig: config });
+
+    const { WebDAVClient } = await import('../../utils/webdav-client');
+    const client = new WebDAVClient(config.webdav);
+    const result = await client.uploadConfigToWebDAV(config, config.configSyncDir!);
+
+    if (result.success) {
+      showMessage('success', `配置已成功上传到 ${result.finalPath}`);
+    } else {
+      showMessage('error', `上传失败: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Upload config error:', error);
+    showMessage('error', '上传配置时出错');
+  } finally {
+    isUploadingConfig.value = false;
+  }
+}
+
+async function downloadConfigFromWebDAV() {
+  if (!isConfigSyncValid.value) {
+    showMessage('error', '请先配置 WebDAV 和配置同步目录');
+    return;
+  }
+
+  if (!confirm('确定要从 WebDAV 下载配置吗？这将覆盖当前所有本地配置，且不可撤销！')) {
+    return;
+  }
+
+  isDownloadingConfig.value = true;
+  try {
+    const { WebDAVClient } = await import('../../utils/webdav-client');
+    const client = new WebDAVClient(config.webdav);
+    const result = await client.downloadConfigFromWebDAV(config.configSyncDir!);
+
+    if (result.success && result.config) {
+      // 覆盖本地配置
+      await browser.storage.local.set({ extensionConfig: result.config });
+      // 重新加载配置到UI
+      Object.assign(config, result.config);
+      showMessage('success', '配置已成功从 WebDAV 下载并应用');
+    } else {
+      showMessage('error', `下载失败: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Download config error:', error);
+    showMessage('error', '下载配置时出错');
+  } finally {
+    isDownloadingConfig.value = false;
+  }
 }
 </script>
 
@@ -366,6 +437,59 @@ function togglePasswordVisibility() {
               webdavTestResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
             ]">
               {{ webdavTestResult.message }}
+            </div>
+          </div>
+
+          <!-- 配置同步区域 -->
+          <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="font-semibold text-gray-900 mb-3">配置同步</h3>
+            <p class="text-xs text-gray-600 mb-4">
+              将扩展的所有配置保存到 WebDAV，实现多设备配置同步
+            </p>
+
+            <div class="space-y-4">
+              <!-- 配置同步目录 -->
+              <div>
+                <label class="block font-medium text-gray-700 mb-1.5">配置同步目录</label>
+                <input
+                  type="text"
+                  v-model="config.configSyncDir"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
+                  placeholder="/md-save-settings/"
+                />
+                <div class="mt-1 text-xs text-gray-500">
+                  配置文件将保存为 config.json。例如：/md-save-settings/config.json
+                </div>
+              </div>
+
+              <!-- 同步按钮 -->
+              <div class="flex gap-3">
+                <button
+                  @click="uploadConfigToWebDAV"
+                  :disabled="!isConfigSyncValid || isUploadingConfig"
+                  class="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Upload class="w-4 h-4" />
+                  <span v-if="isUploadingConfig">上传中...</span>
+                  <span v-else>上传配置到 WebDAV（覆盖）</span>
+                </button>
+
+                <button
+                  @click="downloadConfigFromWebDAV"
+                  :disabled="!isConfigSyncValid || isDownloadingConfig"
+                  class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Download class="w-4 h-4" />
+                  <span v-if="isDownloadingConfig">下载中...</span>
+                  <span v-else>从 WebDAV 下载配置（覆盖）</span>
+                </button>
+              </div>
+
+              <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                <p class="text-xs text-yellow-800">
+                  ⚠️ <strong>重要提示：</strong>覆盖操作不可撤销，建议操作前手动备份配置。配置将包含所有设置（包括 WebDAV 密码）。
+                </p>
+              </div>
             </div>
           </div>
         </div>
