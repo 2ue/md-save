@@ -77,14 +77,17 @@ Configuration is stored in browser.storage.local as `extensionConfig`:
 
 ```typescript
 interface ExtensionConfig {
-  saveMethod: 'local' | 'webdav';
   downloadDirectory: 'default' | 'custom';
   customDownloadPath: string;
   titleTemplate: string;        // Controls filename generation
   contentTemplate: string;      // Controls final markdown format
   webdav: WebDAVConfig;
+  configVersion?: string;       // Config version for compatibility
+  configSyncDir?: string;       // WebDAV config sync directory path
 }
 ```
+
+**Note**: There is no `saveMethod` configuration field. Users choose between local download and WebDAV upload at save time through the preview modal buttons, providing maximum flexibility.
 
 ## Extension Entry Points
 
