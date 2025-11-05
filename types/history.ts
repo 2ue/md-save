@@ -1,13 +1,12 @@
 // History record types
 export interface HistoryRecord {
   id: string;              // nanoid generated
-  url: string;
+  url: string;             // Original page URL (clickable to open)
   title: string;
   timestamp: number;
   saveLocation: 'local' | 'webdav';
   filename: string;
-  success: boolean;
-  error?: string;
+  savePath: string;        // Full save path: "Downloads/markdown/note.md" or "/webdav/note.md"
   domain: string;
   contentPreview: string;  // First 100 characters preview
   fileSize: number;        // File size in bytes

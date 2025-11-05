@@ -6,7 +6,6 @@ import type { HistoryRecord } from '../../types';
 interface HistoryFilters {
   search: string;
   saveLocation: 'all' | 'local' | 'webdav';
-  status: 'all' | 'success' | 'failed';
   dateRange: 'all' | 'today' | 'week' | 'month';
 }
 
@@ -17,7 +16,6 @@ const isDeleting = ref(false);
 const filters = reactive<HistoryFilters>({
   search: '',
   saveLocation: 'all',
-  status: 'all',
   dateRange: 'all'
 });
 
@@ -36,13 +34,6 @@ const filteredRecords = computed(() => {
     // Save location filter
     if (filters.saveLocation !== 'all' && record.saveLocation !== filters.saveLocation) {
       return false;
-    }
-
-    // Status filter
-    if (filters.status !== 'all') {
-      const isSuccess = record.success;
-      if (filters.status === 'success' && !isSuccess) return false;
-      if (filters.status === 'failed' && isSuccess) return false;
     }
 
     // Date range filter
@@ -69,11 +60,11 @@ const filteredRecords = computed(() => {
 });
 
 const statistics = computed(() => {
-  const total = records.value.length;
-  const successful = records.value.filter(r => r.success).length;
-  const failed = total - successful;
-  
-  return { total, successful, failed };
+  return {
+    total: records.value.length,
+    local: records.value.filter(r => r.saveLocation === 'local').length,
+    webdav: records.value.filter(r => r.saveLocation === 'webdav').length
+  };
 });
 
 const hasSelection = computed(() => selectedIds.value.size > 0);
@@ -189,7 +180,6 @@ function formatFileSize(bytes: number): string {
 function clearFilters() {
   filters.search = '';
   filters.saveLocation = 'all';
-  filters.status = 'all';
   filters.dateRange = 'all';
 }
 </script>
@@ -215,12 +205,12 @@ function clearFilters() {
               <span class="font-semibold">{{ statistics.total }}</span>
             </div>
             <div class="flex items-center gap-1">
-              <CheckCircle class="w-4 h-4 text-green-600" />
-              <span class="text-green-600">{{ statistics.successful }}</span>
+              <Download class="w-4 h-4 text-blue-600" />
+              <span class="text-blue-600">本地: {{ statistics.local }}</span>
             </div>
             <div class="flex items-center gap-1">
-              <AlertCircle class="w-4 h-4 text-red-600" />
-              <span class="text-red-600">{{ statistics.failed }}</span>
+              <Globe class="w-4 h-4 text-green-600" />
+              <span class="text-green-600">WebDAV: {{ statistics.webdav }}</span>
             </div>
           </div>
         </div>
@@ -246,23 +236,13 @@ function clearFilters() {
           </div>
 
           <!-- Save Location Filter -->
-          <select 
-            v-model="filters.saveLocation" 
+          <select
+            v-model="filters.saveLocation"
             class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
           >
             <option value="all">所有位置</option>
             <option value="local">本地下载</option>
             <option value="webdav">WebDAV</option>
-          </select>
-
-          <!-- Status Filter -->
-          <select 
-            v-model="filters.status" 
-            class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
-          >
-            <option value="all">所有状态</option>
-            <option value="success">成功</option>
-            <option value="failed">失败</option>
           </select>
 
           <!-- Date Range Filter -->
@@ -354,11 +334,10 @@ function clearFilters() {
                   />
                 </th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">标题</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">域名</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">网址</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">保存位置</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">保存目录</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">保存时间</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">位置</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">大小</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
             </thead>
@@ -377,28 +356,28 @@ function clearFilters() {
                     class="w-4 h-4 rounded"
                   />
                 </td>
+                <!-- 标题 -->
                 <td class="px-4 py-3">
                   <div class="max-w-96">
                     <div class="font-medium text-gray-900 truncate">{{ record.title }}</div>
                     <div class="text-xs text-gray-500 truncate mt-1">{{ record.contentPreview }}</div>
                   </div>
                 </td>
+                <!-- 网址 (可点击) -->
                 <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <Globe class="w-4 h-4 text-gray-400" />
-                    <span class="text-sm text-gray-900">{{ record.domain }}</span>
-                  </div>
+                  <button
+                    @click="openUrl(record.url)"
+                    class="max-w-64 text-sm text-blue-600 hover:text-blue-800 hover:underline truncate block text-left"
+                    :title="record.url"
+                  >
+                    {{ record.url }}
+                  </button>
                 </td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <Calendar class="w-4 h-4 text-gray-400" />
-                    <span class="text-sm text-gray-600">{{ formatDate(record.timestamp) }}</span>
-                  </div>
-                </td>
+                <!-- 保存位置 -->
                 <td class="px-4 py-3">
                   <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium" :class="
-                    record.saveLocation === 'local' 
-                      ? 'bg-blue-100 text-blue-800' 
+                    record.saveLocation === 'local'
+                      ? 'bg-blue-100 text-blue-800'
                       : 'bg-green-100 text-green-800'
                   ">
                     <Download v-if="record.saveLocation === 'local'" class="w-3 h-3" />
@@ -406,40 +385,30 @@ function clearFilters() {
                     {{ record.saveLocation === 'local' ? '本地' : 'WebDAV' }}
                   </span>
                 </td>
+                <!-- 保存目录 (完整路径) -->
                 <td class="px-4 py-3">
-                  <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium" :class="
-                    record.success 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  ">
-                    <CheckCircle v-if="record.success" class="w-3 h-3" />
-                    <AlertCircle v-else class="w-3 h-3" />
-                    {{ record.success ? '成功' : '失败' }}
-                  </span>
-                  <div v-if="!record.success && record.error" class="text-xs text-red-600 mt-1">
-                    {{ record.error }}
+                  <div class="max-w-xs">
+                    <span class="text-sm text-gray-700 font-mono truncate block" :title="record.savePath">
+                      {{ record.savePath }}
+                    </span>
                   </div>
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-600">
-                  {{ formatFileSize(record.fileSize) }}
-                </td>
-                <td class="px-4 py-3">
+                <!-- 保存时间 -->
+                <td class="px-4 py-3 whitespace-nowrap">
                   <div class="flex items-center gap-2">
-                    <button
-                      @click="openUrl(record.url)"
-                      class="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                      title="打开原网页"
-                    >
-                      <ExternalLink class="w-4 h-4" />
-                    </button>
-                    <button
-                      @click="deleteRecord(record.id)"
-                      class="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                      title="删除记录"
-                    >
-                      <Trash2 class="w-4 h-4" />
-                    </button>
+                    <Calendar class="w-4 h-4 text-gray-400" />
+                    <span class="text-sm text-gray-600">{{ formatDate(record.timestamp) }}</span>
                   </div>
+                </td>
+                <!-- 操作 -->
+                <td class="px-4 py-3">
+                  <button
+                    @click="deleteRecord(record.id)"
+                    class="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                    title="删除记录"
+                  >
+                    <Trash2 class="w-4 h-4" />
+                  </button>
                 </td>
               </tr>
             </tbody>

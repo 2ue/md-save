@@ -1,11 +1,8 @@
 import { AuthType, createClient, WebDAVClient as WebDAVClientType } from 'webdav';
+import type { WebDAVConfig, ExtensionConfig } from '@/types/config';
 
-export interface WebDAVConfig {
-  url: string;
-  username: string;
-  password: string;
-  path?: string;
-}
+// Re-export WebDAVConfig for convenience
+export type { WebDAVConfig };
 
 export interface UploadResult {
   success: boolean;
@@ -20,8 +17,13 @@ export class WebDAVClient {
 
   constructor(config: WebDAVConfig) {
     this.config = config;
+    // 根据配置选择认证类型
+    // 'basic' 映射到 AuthType.Password (HTTP Basic Authentication)
+    // 'digest' 映射到 AuthType.Digest (HTTP Digest Authentication)
+    const authType = config.authType === 'basic' ? AuthType.Password : AuthType.Digest;
+
     this.client = createClient(config.url, {
-      authType: AuthType.Digest,
+      authType,
       username: config.username,
       password: config.password,
       httpAgent: false,
@@ -108,21 +110,6 @@ export class WebDAVClient {
     }
   }
 
-  /**
-   * 生成新的文件名（添加时间戳）
-   */
-  generateNewFilename(filename: string): string {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const lastDotIndex = filename.lastIndexOf('.');
-    
-    if (lastDotIndex === -1) {
-      return `${filename}_${timestamp}`;
-    }
-    
-    const name = filename.substring(0, lastDotIndex);
-    const ext = filename.substring(lastDotIndex);
-    return `${name}_${timestamp}${ext}`;
-  }
 
   /**
    * 上传文件的主要方法
@@ -186,9 +173,96 @@ export class WebDAVClient {
       });
       
       console.log('Returning general error:', error.message);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : String(error) 
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
+   * 上传配置到WebDAV
+   * @param config 完整的扩展配置对象
+   * @param configSyncDir 配置同步目录，如 "/md-save-settings/"
+   */
+  async uploadConfigToWebDAV(config: ExtensionConfig, configSyncDir: string): Promise<UploadResult> {
+    try {
+      // 确保configSyncDir格式正确
+      const normalizedDir = this.normalizePath(configSyncDir);
+      const configPath = `${normalizedDir}config.json`;
+
+      // 添加版本号
+      const configWithVersion = {
+        ...config,
+        configVersion: '1.0.0'
+      };
+
+      // 序列化为JSON
+      const jsonContent = JSON.stringify(configWithVersion, null, 2);
+
+      // 确保目录存在
+      const dirCreated = await this.ensureDirectory(normalizedDir);
+      if (!dirCreated) {
+        return {
+          success: false,
+          error: `Failed to create config directory: ${normalizedDir}`
+        };
+      }
+
+      // 上传配置文件（覆盖模式）
+      const uploadSuccess = await this.client.putFileContents(configPath, jsonContent, {
+        contentLength: true,
+        overwrite: true
+      });
+
+      if (uploadSuccess) {
+        return { success: true, finalPath: configPath };
+      } else {
+        return {
+          success: false,
+          error: 'Failed to upload config file'
+        };
+      }
+    } catch (error: any) {
+      console.error('Upload config error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
+   * 从WebDAV下载配置
+   * @param configSyncDir 配置同步目录，如 "/md-save-settings/"
+   */
+  async downloadConfigFromWebDAV(configSyncDir: string): Promise<{ success: boolean; config?: ExtensionConfig; error?: string }> {
+    try {
+      // 确保configSyncDir格式正确
+      const normalizedDir = this.normalizePath(configSyncDir);
+      const configPath = `${normalizedDir}config.json`;
+
+      // 检查文件是否存在
+      const exists = await this.client.exists(configPath);
+      if (!exists) {
+        return {
+          success: false,
+          error: '配置文件不存在，请先上传配置'
+        };
+      }
+
+      // 下载文件内容
+      const content = await this.client.getFileContents(configPath, { format: 'text' });
+
+      // 解析JSON
+      const config = JSON.parse(content as string) as ExtensionConfig;
+
+      return { success: true, config };
+    } catch (error: any) {
+      console.error('Download config error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }

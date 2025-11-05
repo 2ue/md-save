@@ -1,68 +1,34 @@
 <script lang="ts" setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted } from 'vue';
 import { MousePointer, FileText, History, Settings, Download, Cloud, Copy } from 'lucide-vue-next';
-import { contentService, type ProcessedContent } from '@/utils/content-service';
 
-interface ExtractedContent {
-  html: string;
-  markdown: string;
-  title: string;
-  url: string;
-  timestamp: string;
-}
-
-const isLoading = ref(false);
 const currentTab = ref<any | null>(null);
-const extractedContent = ref<ExtractedContent | null>(null);
-const processedContent = ref<ProcessedContent | null>(null);
-const message = ref('');
-
-// 新增：可编辑的文件名和错误状态
-const editableFilename = ref('');
-const filenameError = ref('');
-
-// 计算属性：文件名是否有效
-const isFilenameValid = computed(() => {
-  return editableFilename.value.trim() && !filenameError.value;
-});
-
-// 监听processedContent变化，更新可编辑文件名
-watch(processedContent, (newVal) => {
-  if (newVal) {
-    editableFilename.value = newVal.filename;
-    filenameError.value = '';
-  }
-});
-
-// 清除文件名错误
-function clearFilenameError() {
-  filenameError.value = '';
-}
+const isValidPage = ref(true);
 
 onMounted(async () => {
   // Get current active tab
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   currentTab.value = tab;
+  // Check if current page is valid for content extraction
+  isValidPage.value = isValidWebUrl(tab.url);
 });
 
 // 显示消息
 function showMessage(msg: string, type: 'success' | 'error' = 'success') {
-  message.value = msg;
-  
   // Create toast notification
   const toast = document.createElement('div');
   toast.className = `fixed top-6 right-6 px-4 py-3 rounded-lg font-medium z-50 transition-all duration-300 transform translate-x-full ${
     type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
   }`;
   toast.textContent = msg;
-  
+
   document.body.appendChild(toast);
-  
+
   // Animate in
   requestAnimationFrame(() => {
     toast.style.transform = 'translateX(0)';
   });
-  
+
   // Auto remove after 3 seconds
   setTimeout(() => {
     toast.style.transform = 'translateX(100%)';
@@ -71,7 +37,6 @@ function showMessage(msg: string, type: 'success' | 'error' = 'success') {
         document.body.removeChild(toast);
       }
     }, 300);
-    message.value = '';
   }, 3000);
 }
 
@@ -81,9 +46,21 @@ async function getCurrentTab() {
   return tab;
 }
 
+// 验证URL是否为有效的网页
+function isValidWebUrl(url?: string): boolean {
+  if (!url) return false;
+  return url.startsWith('http://') || url.startsWith('https://');
+}
+
 async function startSelection() {
   const tab = await getCurrentTab();
   if (!tab.id) return;
+
+  // 验证URL
+  if (!isValidWebUrl(tab.url)) {
+    showMessage('此功能仅在网页中可用', 'error');
+    return;
+  }
 
   try {
     await browser.tabs.sendMessage(tab.id, { type: 'START_SELECTION' });
@@ -97,91 +74,28 @@ async function saveFullPage() {
   const tab = await getCurrentTab();
   if (!tab.id) return;
 
-  isLoading.value = true;
+  // 验证URL
+  if (!isValidWebUrl(tab.url)) {
+    showMessage('此功能仅在网页中可用', 'error');
+    return;
+  }
+
   try {
+    // 提取页面内容
     const response = await browser.tabs.sendMessage(tab.id, { type: 'EXTRACT_FULL_PAGE' });
     if (response.success) {
-      extractedContent.value = response.data;
-      // Process content using configuration
-      processedContent.value = await contentService.processContent(response.data);  
-      showMessage('页面内容已提取');
+      // 将内容发送到 content script 显示居中弹窗
+      await browser.tabs.sendMessage(tab.id, {
+        type: 'SHOW_PREVIEW',
+        data: response.data
+      });
+      // 关闭 popup
+      window.close();
     } else {
       showMessage('提取失败', 'error');
     }
   } catch (error) {
     showMessage('无法提取页面内容', 'error');
-  }
-  isLoading.value = false;
-}
-
-async function downloadLocal() {
-  if (!processedContent.value || !isFilenameValid.value) return;
-
-  const config = contentService.getConfig();
-  const downloadPath = config.downloadDirectory === 'custom' && config.customDownloadPath
-    ? config.customDownloadPath
-    : null;
-
-  try {
-    await browser.runtime.sendMessage({
-      type: 'DOWNLOAD_FILE',
-      data: {
-        filename: editableFilename.value, // 使用用户输入的文件名
-        content: processedContent.value.content,
-        downloadPath
-      }
-    });
-    showMessage('文件下载成功');
-  } catch (error) {
-    showMessage('下载失败', 'error');
-  }
-}
-
-async function saveToWebDAV() {
-  if (!processedContent.value || !isFilenameValid.value) return;
-
-  const config = contentService.getConfig();
-  
-  if (!config.webdav.url || !config.webdav.username) {
-    showMessage('请先配置WebDAV', 'error');
-    openSettings();
-    return;
-  }
-
-  // 清除之前的错误
-  filenameError.value = '';
-  isLoading.value = true;
-  
-  try {
-    // 使用当前输入的文件名进行上传
-    const uploadResult = await browser.runtime.sendMessage({
-      type: 'WEBDAV_UPLOAD',
-      data: {
-        filename: editableFilename.value,
-        content: processedContent.value.content,
-        webdavConfig: config.webdav,
-        overwrite: false  // 总是不覆盖，让webdav包检测冲突
-      }
-    });
-    
-    // 检查响应是否有效
-    if (!uploadResult) {
-      throw new Error('未收到来自background script的响应');
-    }
-    
-    isLoading.value = false;
-
-    if (uploadResult.success) {
-      showMessage(`保存到WebDAV成功${uploadResult.finalPath ? `: ${uploadResult.finalPath}` : ''}`);
-    } else if (uploadResult.fileExists) {
-      // 文件已存在，显示内联错误提示
-      filenameError.value = '文件已存在，请修改文件名';
-    } else {
-      showMessage(`保存到WebDAV失败: ${uploadResult.error || '未知错误'}`, 'error');
-    }
-  } catch (error) {
-    isLoading.value = false;
-    showMessage(`保存到WebDAV失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
   }
 }
 
@@ -221,7 +135,7 @@ async function copyPageInfo() {
         <FileText class="w-5 h-5 text-blue-600" />
         <h1 class="text-lg font-semibold text-gray-800">MD Save</h1>
       </div>
-      <button 
+      <button
         @click="openSettings"
         class="p-1 rounded hover:bg-gray-100 transition-colors"
         title="设置"
@@ -259,11 +173,19 @@ async function copyPageInfo() {
       </div>
     </div>
 
+    <!-- Invalid page notice -->
+    <div v-if="!isValidPage" class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+      <div class="text-sm text-yellow-800">
+        <div class="font-medium mb-1">⚠️ 此页面不支持内容提取</div>
+        <div class="text-xs">请在普通网页(http/https)中使用本插件</div>
+      </div>
+    </div>
+
     <!-- Action buttons -->
-    <div v-if="!processedContent" class="flex flex-col gap-2">
+    <div class="flex flex-col gap-2">
       <button
         @click="startSelection"
-        :disabled="isLoading"
+        :disabled="!isValidPage"
         class="flex items-center gap-3 p-3 border border-blue-600 rounded-lg bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <MousePointer class="w-5 h-5" />
@@ -275,7 +197,7 @@ async function copyPageInfo() {
 
       <button
         @click="saveFullPage"
-        :disabled="isLoading"
+        :disabled="!isValidPage"
         class="flex items-center gap-3 p-3 border border-blue-600 rounded-lg bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <FileText class="w-5 h-5" />
@@ -295,70 +217,6 @@ async function copyPageInfo() {
           <div class="text-xs opacity-75">查看已保存的内容</div>
         </div>
       </button>
-    </div>
-
-    <!-- Content preview and save options -->
-    <div v-if="processedContent" class="space-y-4">
-      <div class="border-t border-gray-200 pt-4">
-        <h3 class="text-sm font-medium text-gray-900 mb-3">内容预览</h3>
-        
-        <!-- 文件名输入框 -->
-        <div class="mb-3">
-          <label class="block text-xs font-medium text-gray-700 mb-1">文件名</label>
-          <input 
-            v-model="editableFilename"
-            @input="clearFilenameError"
-            :class="[
-              'w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500',
-              filenameError ? 'border-red-500 bg-red-50' : 'border-gray-300'
-            ]"
-            placeholder="请输入文件名"
-          >
-          <div v-if="filenameError" class="mt-1 text-xs text-red-600">
-            {{ filenameError }}
-          </div>
-        </div>
-        
-        <div class="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-40 overflow-y-auto">
-          <pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono">{{ processedContent.content }}</pre>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-2">
-        <button
-          @click="downloadLocal"
-          :disabled="isLoading || !isFilenameValid"
-          class="flex items-center gap-3 p-3 bg-green-600 text-white rounded-lg hover:bg-green-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Download class="w-5 h-5" />
-          <div class="text-left">
-            <div class="font-medium">下载到本地</div>
-          </div>
-        </button>
-
-        <button
-          @click="saveToWebDAV"
-          :disabled="isLoading || !isFilenameValid"
-          class="flex items-center gap-3 p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Cloud class="w-5 h-5" />
-          <div class="text-left">
-            <div class="font-medium">保存到WebDAV</div>
-          </div>
-        </button>
-
-        <button
-          @click="processedContent = null; extractedContent = null"
-          class="text-sm text-gray-600 hover:text-gray-800 py-2 transition-colors"
-        >
-          重新选择内容
-        </button>
-      </div>
-    </div>
-
-    <!-- Loading overlay -->
-    <div v-if="isLoading" class="absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center rounded-lg">
-      <div class="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
     </div>
   </div>
 </template>

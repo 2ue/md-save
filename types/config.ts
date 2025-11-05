@@ -4,10 +4,12 @@ export interface WebDAVConfig {
   username: string;
   password: string;
   path: string;
+  authType: 'basic' | 'digest';
 }
 
 export interface ExtensionConfig {
-  saveMethod: 'local' | 'webdav';
+  configVersion?: string;           // 配置版本号，用于未来兼容性
+  configSyncDir?: string;            // WebDAV配置同步目录路径
   downloadDirectory: 'default' | 'custom';
   customDownloadPath: string;
   titleTemplate: string;
@@ -16,7 +18,8 @@ export interface ExtensionConfig {
 }
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
-  saveMethod: 'local',
+  configVersion: '1.0.0',
+  configSyncDir: '',
   downloadDirectory: 'default',
   customDownloadPath: '',
   titleTemplate: '{{title}}',
@@ -30,8 +33,7 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     url: '',
     username: '',
     password: '',
-    path: '/'
+    path: '/',
+    authType: 'basic'
   }
 };
-
-export type SaveMethod = ExtensionConfig['saveMethod'];

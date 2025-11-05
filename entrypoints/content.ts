@@ -4,7 +4,7 @@ import { WebDAVClient, type WebDAVConfig } from '@/utils/webdav-client';
 import { contentService } from '@/utils/content-service';
 
 export default defineContentScript({
-  matches: ['<all_urls>'],
+  matches: ['http://*/*', 'https://*/*'],
   main() {
     let isSelectionMode = false;
     let currentHighlight: HTMLElement | null = null;
@@ -143,16 +143,19 @@ export default defineContentScript({
       };
     }
 
+    // 存储已处理的内容，避免重复处理
+    let cachedProcessedContent: any = null;
+
     // 创建预览弹窗
     async function createPreviewModal(content: any) {
-      // Process content using templates for preview
-      const processedContent = await contentService.processContent({
+      // Process content using templates for preview (只处理一次)
+      cachedProcessedContent = await contentService.processContent({
         title: content.title,
         url: content.url,
         markdown: content.markdown,
         timestamp: content.timestamp
       });
-      
+
       const modal = document.createElement('div');
       modal.id = 'web-save-preview-modal';
       modal.style.cssText = `
@@ -173,85 +176,110 @@ export default defineContentScript({
       modalContent.style.cssText = `
         background: white;
         border-radius: 8px;
-        padding: 20px;
+        padding: 24px;
         max-width: 800px;
         width: 90vw;
         max-height: 85vh;
         overflow-y: auto;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.05);
       `;
 
       modalContent.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3 style="margin: 0; color: #333; font-size: 18px;">内容预览</h3>
-          <button id="close-preview" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">&times;</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+          <h3 style="margin: 0; color: #111827; font-size: 18px; font-weight: 600;">内容预览</h3>
+          <button id="close-preview" style="
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #9ca3af;
+            line-height: 1;
+            padding: 0;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: all 0.2s;
+          " onmouseover="this.style.background='#f3f4f6'; this.style.color='#374151'" onmouseout="this.style.background='none'; this.style.color='#9ca3af'">&times;</button>
         </div>
 
         <!-- 文件名输入框 -->
         <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500; color: #333;">文件名</label>
-          <input type="text" id="filename-input" value="${processedContent.filename}" style="
+          <label style="display: block; margin-bottom: 6px; font-size: 12px; font-weight: 500; color: #374151;">文件名</label>
+          <input type="text" id="filename-input" value="${cachedProcessedContent.filename}" style="
             width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
             font-size: 14px;
             box-sizing: border-box;
-          ">
+            transition: all 0.2s;
+            outline: none;
+          " onfocus="this.style.borderColor='#2563eb'; this.style.boxShadow='0 0 0 3px rgba(37, 99, 235, 0.1)'" onblur="this.style.borderColor='#d1d5db'; this.style.boxShadow='none'">
           <div id="filename-error" style="
-            margin-top: 4px;
+            margin-top: 6px;
             font-size: 12px;
-            color: #dc3545;
+            color: #dc2626;
             display: none;
           "></div>
         </div>
 
-        <div style="margin-bottom: 16px;">
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; margin-bottom: 6px; font-size: 12px; font-weight: 500; color: #374151;">内容</label>
           <textarea readonly style="
             width: 100%;
             height: 300px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', monospace;
+            font-family: 'Courier New', 'Consolas', monospace;
             font-size: 13px;
-            line-height: 1.5;
+            line-height: 1.6;
             resize: vertical;
             box-sizing: border-box;
-            background: #f8f9fa;
-          ">${processedContent.content}</textarea>
+            background: #f9fafb;
+            color: #374151;
+          ">${cachedProcessedContent.content}</textarea>
         </div>
 
         <div style="display: flex; gap: 8px; justify-content: flex-end;">
           <button id="save-local" style="
-            background: #28a745;
+            background: #16a34a;
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 4px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
-          ">下载到本地</button>
-          
+            font-weight: 500;
+            transition: background-color 0.2s;
+          " onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'">下载到本地</button>
+
           <button id="save-webdav" style="
-            background: #17a2b8;
+            background: #2563eb;
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 4px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
-          ">保存到WebDAV</button>
-          
+            font-weight: 500;
+            transition: background-color 0.2s;
+          " onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">保存到WebDAV</button>
+
           <button id="cancel-save" style="
-            background: #6c757d;
-            color: white;
-            border: none;
+            background: #ffffff;
+            color: #4b5563;
+            border: 1px solid #d1d5db;
             padding: 8px 16px;
-            border-radius: 4px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
-          ">取消</button>
+            font-weight: 500;
+            transition: all 0.2s;
+          " onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='#ffffff'">取消</button>
         </div>
       `;
 
@@ -267,15 +295,15 @@ export default defineContentScript({
 
       // 清除文件名错误的函数
       const clearFilenameError = () => {
-        filenameInput.style.borderColor = '#ddd';
+        filenameInput.style.borderColor = '#d1d5db';
         filenameInput.style.backgroundColor = 'white';
         filenameError.style.display = 'none';
       };
 
       // 显示文件名错误的函数
       const showFilenameError = (message: string) => {
-        filenameInput.style.borderColor = '#dc3545';
-        filenameInput.style.backgroundColor = '#fff5f5';
+        filenameInput.style.borderColor = '#dc2626';
+        filenameInput.style.backgroundColor = '#fef2f2';
         filenameError.textContent = message;
         filenameError.style.display = 'block';
       };
@@ -327,37 +355,64 @@ export default defineContentScript({
     // 保存到本地
     async function saveToLocal(content: any, filename: string) {
       try {
-        // Process content using ContentService and templates
-        const processedContent = await contentService.processContent({
-          title: content.title,
-          url: content.url,
-          markdown: content.markdown,
-          timestamp: content.timestamp
-        });
+        // 使用缓存的已处理内容，避免重复处理
+        if (!cachedProcessedContent) {
+          showMessage('内容处理失败，请重试', 'error');
+          return;
+        }
 
-        // Create download link using user-provided filename
-        const blob = new Blob([processedContent.content], { type: 'text/markdown' });
+        // 使用 Web 标准 API 下载（content script 完全支持）
+        const blob = new Blob([cachedProcessedContent.content], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
+
+        // 创建隐藏的下载链接
         const a = document.createElement('a');
         a.href = url;
-        a.download = filename; // 使用用户输入的文件名
+        a.download = filename;
+        a.style.display = 'none';
+
+        // 触发下载
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+
+        // 清理
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+
+        // 准备页面信息并异步记录历史
+        const pageInfo = {
+          url: content.url,
+          title: content.title,
+          domain: new URL(content.url).hostname,
+          contentPreview: content.markdown.substring(0, 100)
+        };
+
+        // 异步记录历史（不阻塞用户界面）
+        browser.runtime.sendMessage({
+          type: 'RECORD_HISTORY',
+          data: {
+            pageInfo,
+            filename,
+            savePath: filename, // 默认下载目录，路径就是文件名
+            saveLocation: 'local',
+            fileSize: blob.size
+          }
+        }).catch(err => console.error('Failed to record history:', err));
 
         showMessage('文件下载成功', 'success');
         closePreviewModal();
-      } catch (error) {
-        showMessage('下载失败', 'error');
+      } catch (error: any) {
+        showMessage(`下载失败: ${error?.message}`, 'error');
       }
     }
 
     // 保存到WebDAV
     async function saveToWebDAV(
-      content: any, 
-      filename: string, 
-      filenameInput: HTMLInputElement, 
+      content: any,
+      filename: string,
+      filenameInput: HTMLInputElement,
       showFilenameError: (message: string) => void
     ) {
       try {
@@ -369,43 +424,41 @@ export default defineContentScript({
           return;
         }
 
-        // Process content using ContentService and templates
-        const processedContent = await contentService.processContent({
-          title: content.title,
-          url: content.url,
-          markdown: content.markdown,
-          timestamp: content.timestamp
-        });
-
-        try {
-          // 通过后台脚本上传，不覆盖已存在文件
-          const uploadResult = await browser.runtime.sendMessage({
-            type: 'WEBDAV_UPLOAD',
-            data: {
-              filename: filename, // 使用用户输入的文件名
-              content: processedContent.content,
-              webdavConfig,
-              overwrite: false  // 总是不覆盖，让webdav包检测冲突
-            }
-          });
-          
-          // 检查响应是否有效
-          if (!uploadResult) {
-            throw new Error('未收到来自background script的响应');
-          }
-          
-          if (uploadResult.success) {
-            showMessage('保存到WebDAV成功', 'success');
-            closePreviewModal();
-          } else if (uploadResult.fileExists) {
-            // 文件已存在，显示内联错误提示
-            showFilenameError('文件已存在，请修改文件名');
-          } else {
-            showMessage(`保存到WebDAV失败: ${uploadResult.error || '未知错误'}`, 'error');
-          }
-        } catch (error) {
-          showMessage(`保存到WebDAV失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
+        // 使用缓存的已处理内容，避免重复处理
+        if (!cachedProcessedContent) {
+          showMessage('内容处理失败，请重试', 'error');
+          return;
         }
+
+        // 准备页面信息用于历史记录
+        const pageInfo = {
+          url: content.url,
+          title: content.title,
+          domain: new URL(content.url).hostname,
+          contentPreview: content.markdown.substring(0, 100)
+        };
+
+        // 动态导入 WebDAV 服务
+        const { uploadToWebDAV } = await import('@/utils/webdav-service');
+
+        await uploadToWebDAV(
+          cachedProcessedContent,
+          filename,
+          webdavConfig,
+          {
+            onSuccess: () => {
+              showMessage('保存到WebDAV成功', 'success');
+              closePreviewModal();
+            },
+            onFileExists: () => {
+              showFilenameError('文件已存在，请修改文件名');
+            },
+            onError: (error) => {
+              showMessage(`保存到WebDAV失败: ${error}`, 'error');
+            }
+          },
+          pageInfo
+        );
       } catch (error) {
         showMessage('保存到WebDAV失败', 'error');
       }
@@ -416,22 +469,37 @@ export default defineContentScript({
       const messageEl = document.createElement('div');
       messageEl.style.cssText = `
         position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        border-radius: 4px;
+        top: 24px;
+        right: 24px;
+        padding: 12px 16px;
+        border-radius: 8px;
         color: white;
         font-size: 14px;
+        font-weight: 500;
         z-index: 1000000;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        ${type === 'success' ? 'background: #28a745;' : 'background: #dc3545;'}
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        transform: translateX(100%);
+        transition: transform 0.3s ease-in-out;
+        ${type === 'success' ? 'background: #16a34a;' : 'background: #dc2626;'}
       `;
       messageEl.textContent = msg;
 
       document.body.appendChild(messageEl);
 
+      // Animate in
+      requestAnimationFrame(() => {
+        messageEl.style.transform = 'translateX(0)';
+      });
+
+      // Auto remove after 3 seconds
       setTimeout(() => {
-        messageEl.remove();
+        messageEl.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+          if (document.body.contains(messageEl)) {
+            messageEl.remove();
+          }
+        }, 300);
       }, 3000);
     }
 
@@ -493,6 +561,19 @@ export default defineContentScript({
             data: { ...fullPageContent, markdown }
           });
           break;
+
+        case 'SHOW_PREVIEW':
+          // 显示预览弹窗（用于保存整个页面）
+          (async () => {
+            const extractedContent = {
+              ...message.data,
+              markdown: message.data.markdown
+            };
+            previewModal = await createPreviewModal(extractedContent);
+            document.body.appendChild(previewModal);
+            sendResponse({ success: true });
+          })();
+          return true; // 异步响应
       }
     });
   },
