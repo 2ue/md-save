@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted, computed } from 'vue';
-import { Save, TestTube, Settings, FileText, Cloud, HardDrive, Eye, EyeOff, Upload, Download, FolderSync, FileDown, FileUp, RotateCcw } from 'lucide-vue-next';
+import { Save, TestTube, Settings, FileText, Cloud, HardDrive, Eye, EyeOff, Upload, Download, FolderSync, FileDown, FileUp, RotateCcw, Folder, Lightbulb, AlertTriangle } from 'lucide-vue-next';
 import type { ExtensionConfig } from '../../types';
 import { DEFAULT_CONFIG } from '../../types/config';
 
@@ -28,6 +28,32 @@ const isWebDAVValid = computed(() => {
 
 const isConfigSyncValid = computed(() => {
   return isWebDAVValid.value && config.configSyncDir?.trim();
+});
+
+// 推断默认下载目录（基于操作系统）
+const inferredDownloadDir = computed(() => {
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (userAgent.includes('mac')) {
+    return '~/Downloads';
+  } else if (userAgent.includes('win')) {
+    return 'C:\\Users\\<用户名>\\Downloads';
+  } else if (userAgent.includes('linux')) {
+    return '~/Downloads';
+  } else {
+    return '下载目录'; // 默认通用名称
+  }
+});
+
+// 完整的保存路径预览
+const fullSavePath = computed(() => {
+  const baseDir = inferredDownloadDir.value;
+  if (config.downloadDirectory === 'custom' && config.customDownloadPath.trim()) {
+    const customPath = config.customDownloadPath.trim();
+    const separator = baseDir.includes('\\') ? '\\' : '/';
+    return `${baseDir}${separator}${customPath}`;
+  }
+  return baseDir;
 });
 
 onMounted(async () => {
@@ -260,11 +286,15 @@ async function exportConfigToFile() {
     const json = JSON.stringify(configToExport, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
 
+    // 生成时间戳: YYYYMMDDHHmmss (24小时制, 两位数补全)
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
     // 创建下载链接
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `md-save-config-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `md-save-config-${timestamp}.json`;
     document.body.appendChild(a);
     a.click();
 
@@ -336,7 +366,7 @@ async function importConfigFromFile() {
           <Settings class="w-8 h-8 text-blue-600" />
           <div>
             <h1 class="text-2xl font-bold text-gray-900">MD Save 设置</h1>
-            <p class="text-sm text-gray-600">配置内容保存和模板选项</p>
+            <p class="text-sm text-gray-600">管理扩展的功能配置和选项</p>
           </div>
         </div>
 
@@ -377,7 +407,7 @@ async function importConfigFromFile() {
               ]"
             >
               <HardDrive class="w-5 h-5" />
-              <span>存储</span>
+              <span class="text-base">存储</span>
             </button>
 
             <button
@@ -390,7 +420,7 @@ async function importConfigFromFile() {
               ]"
             >
               <FileText class="w-5 h-5" />
-              <span>内容模板</span>
+              <span class="text-base">内容模板</span>
             </button>
 
             <button
@@ -403,7 +433,7 @@ async function importConfigFromFile() {
               ]"
             >
               <FolderSync class="w-5 h-5" />
-              <span>配置同步</span>
+              <span class="text-base">配置同步</span>
             </button>
           </nav>
         </aside>
@@ -422,15 +452,24 @@ async function importConfigFromFile() {
               <div>
                 <label class="block font-medium text-gray-700 mb-3">下载目录</label>
                 <div class="space-y-3">
-                  <label class="flex items-center gap-2 cursor-pointer p-3 border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'default' ? 'border-blue-500 bg-blue-50' : ''">
-                    <input
-                      type="radio"
-                      value="default"
-                      v-model="config.downloadDirectory"
-                      class="w-4 h-4"
-                    />
-                    <span class="text-sm text-gray-700">使用浏览器默认下载目录</span>
-                  </label>
+                  <div class="border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'default' ? 'border-blue-500' : ''">
+                    <label class="flex items-center gap-2 cursor-pointer p-3" :class="config.downloadDirectory === 'default' ? 'bg-blue-50' : ''">
+                      <input
+                        type="radio"
+                        value="default"
+                        v-model="config.downloadDirectory"
+                        class="w-4 h-4"
+                      />
+                      <span class="text-sm text-gray-700">使用浏览器默认下载目录</span>
+                    </label>
+                    <div v-if="config.downloadDirectory === 'default'" class="px-3 pb-3 pt-0">
+                      <div class="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                        <Folder class="w-3.5 h-3.5 text-green-600" />
+                        <span class="text-xs text-green-700">保存位置：</span>
+                        <code class="text-xs font-mono text-green-800 font-semibold">{{ inferredDownloadDir }}</code>
+                      </div>
+                    </div>
+                  </div>
 
                   <div class="border border-gray-200 rounded-lg" :class="config.downloadDirectory === 'custom' ? 'border-blue-500' : ''">
                     <label class="flex items-center gap-2 cursor-pointer p-3" :class="config.downloadDirectory === 'custom' ? 'bg-blue-50' : ''">
@@ -440,18 +479,28 @@ async function importConfigFromFile() {
                         v-model="config.downloadDirectory"
                         class="w-4 h-4"
                       />
-                      <span class="text-sm text-gray-700">自定义下载目录</span>
+                      <span class="text-sm text-gray-700">自定义下载目录（相对路径）</span>
                     </label>
 
-                    <div v-if="config.downloadDirectory === 'custom'" class="px-3 pb-3">
-                      <input
-                        type="text"
-                        v-model="config.customDownloadPath"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
-                        placeholder="例如: Downloads/MD保存"
-                      />
-                      <div class="mt-1 text-xs text-gray-500">
-                        相对于默认下载目录的路径，如：subfolder 或 subfolder/markdown
+                    <div v-if="config.downloadDirectory === 'custom'" class="px-3 pb-3 space-y-2.5 pt-2">
+                      <div>
+                        <div class="flex items-center gap-1.5 text-xs text-gray-600 mb-1.5">
+                          <Lightbulb class="w-3.5 h-3.5 text-amber-500" />
+                          <span>输入相对于 <code class="px-1 py-0.5 bg-gray-100 rounded text-gray-800 font-mono">{{ inferredDownloadDir }}</code> 的子目录路径</span>
+                        </div>
+                        <input
+                          type="text"
+                          v-model="config.customDownloadPath"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
+                          placeholder="例如: markdown 或 markdown/notes"
+                        />
+                      </div>
+
+                      <!-- 保存位置预览 -->
+                      <div class="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md">
+                        <Folder class="w-3.5 h-3.5 text-blue-600" />
+                        <span class="text-xs text-blue-700">保存位置：</span>
+                        <code class="text-xs font-mono text-blue-800 font-semibold">{{ fullSavePath }}</code>
                       </div>
                     </div>
                   </div>
@@ -574,15 +623,16 @@ async function importConfigFromFile() {
 
                 <!-- 提示：配置同步 -->
                 <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p class="text-xs text-blue-800">
-                    💡 <strong>提示：</strong>配置好 WebDAV 后，可以在
+                  <p class="flex items-start gap-1.5 text-xs text-blue-800">
+                    <Lightbulb class="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <span><strong>提示：</strong>配置好 WebDAV 后，可以在
                     <button
                       @click="switchTab('sync')"
                       class="underline hover:text-blue-900 font-medium"
                     >
                       配置同步
                     </button>
-                    页面实现多设备配置同步
+                    页面实现多设备配置同步</span>
                   </p>
                 </div>
               </div>
@@ -640,15 +690,16 @@ async function importConfigFromFile() {
 
               <!-- 提示：需要先配置WebDAV -->
               <div v-if="!isWebDAVValid" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p class="text-xs text-yellow-800">
-                  ⚠️ <strong>提示：</strong>需要先在
+                <p class="flex items-start gap-1.5 text-xs text-yellow-800">
+                  <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <span><strong>提示：</strong>需要先在
                   <button
                     @click="switchTab('storage')"
                     class="underline hover:text-yellow-900 font-medium"
                   >
                     存储页面
                   </button>
-                  配置 WebDAV 服务器信息
+                  配置 WebDAV 服务器信息</span>
                 </p>
               </div>
 
@@ -691,8 +742,9 @@ async function importConfigFromFile() {
                 </div>
 
                 <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                  <p class="text-xs text-yellow-800">
-                    ⚠️ <strong>重要提示：</strong>覆盖操作不可撤销，建议操作前手动备份配置。配置将包含所有设置（包括 WebDAV 密码）。
+                  <p class="flex items-start gap-1.5 text-xs text-yellow-800">
+                    <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <span><strong>重要提示：</strong>覆盖操作不可撤销，建议操作前手动备份配置。配置将包含所有设置（包括 WebDAV 密码）。</span>
                   </p>
                 </div>
               </div>
@@ -732,8 +784,9 @@ async function importConfigFromFile() {
               </div>
 
               <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p class="text-xs text-blue-800">
-                  💡 <strong>提示：</strong>导出的 JSON 文件包含所有配置（包括 WebDAV 密码），请妥善保管。导入配置将覆盖当前所有设置。
+                <p class="flex items-start gap-1.5 text-xs text-blue-800">
+                  <Lightbulb class="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <span><strong>提示：</strong>导出的 JSON 文件包含所有配置（包括 WebDAV 密码），请妥善保管。导入配置将覆盖当前所有设置。</span>
                 </p>
               </div>
             </div>
@@ -757,8 +810,9 @@ async function importConfigFromFile() {
               </button>
 
               <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                <p class="text-xs text-red-800">
-                  ⚠️ <strong>警告：</strong>重置操作会清空所有配置，包括 WebDAV 服务器信息和自定义模板，但不会影响已保存的内容。
+                <p class="flex items-start gap-1.5 text-xs text-red-800">
+                  <AlertTriangle class="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <span><strong>警告：</strong>重置操作会清空所有配置，包括 WebDAV 服务器信息和自定义模板，但不会影响已保存的内容。</span>
                 </p>
               </div>
             </div>

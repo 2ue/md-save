@@ -182,6 +182,13 @@ function operation(): { success: boolean; data?: T; error?: string }
 function badOperation(): T | null  // Sometimes throws, sometimes returns null
 ```
 
+### UI and Icon Guidelines
+- **Icon library**: ALWAYS use `lucide-vue-next` icon components
+  - ✅ Correct: `<Folder class="w-4 h-4" />`
+  - ❌ Wrong: Using emoji characters like 📂, 💡, ⚠️
+- **Rationale**: Icon components provide better accessibility, consistent sizing, and theme compatibility
+- **Available icons**: Import from `lucide-vue-next` - see imports in existing Vue files for examples
+
 ### Message Handler Template
 ```typescript
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
