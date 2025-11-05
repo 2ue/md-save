@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed, watch } from 'vue';
-import { MousePointer, FileText, History, Settings, Download, Cloud } from 'lucide-vue-next';
+import { MousePointer, FileText, History, Settings, Download, Cloud, Copy } from 'lucide-vue-next';
 import { contentService, type ProcessedContent } from '@/utils/content-service';
 
 interface ExtractedContent {
@@ -187,7 +187,7 @@ async function saveToWebDAV() {
 
 function openHistory() {
   browser.tabs.create({
-    url: browser.runtime.getURL('/history.html')
+    url: browser.runtime.getURL('/saved-records.html')
   });
   window.close();
 }
@@ -197,6 +197,19 @@ function openSettings() {
     url: browser.runtime.getURL('/options.html')
   });
   window.close();
+}
+
+async function copyPageInfo() {
+  if (!currentTab.value) return;
+
+  const textToCopy = `${currentTab.value.title}\n${currentTab.value.url}`;
+
+  try {
+    await navigator.clipboard.writeText(textToCopy);
+    showMessage('已复制标题和URL');
+  } catch (error) {
+    showMessage('复制失败', 'error');
+  }
 }
 </script>
 
@@ -223,8 +236,8 @@ function openSettings() {
     <!-- Current page info -->
     <div v-if="currentTab" class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
       <div class="flex items-start gap-2">
-        <img 
-          :src="currentTab.favIconUrl || '/icon/16.png'" 
+        <img
+          :src="currentTab.favIconUrl || '/icon/16.png'"
           class="w-4 h-4 mt-0.5 flex-shrink-0"
           alt="网站图标"
         />
@@ -236,6 +249,13 @@ function openSettings() {
             {{ currentTab.url }}
           </div>
         </div>
+        <button
+          @click="copyPageInfo"
+          class="p-1.5 rounded hover:bg-gray-200 transition-colors flex-shrink-0"
+          title="复制标题和URL"
+        >
+          <Copy class="w-4 h-4 text-gray-600" />
+        </button>
       </div>
     </div>
 
