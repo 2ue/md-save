@@ -19,6 +19,7 @@ const isImporting = ref(false);
 const showPassword = ref(false);
 const webdavTestResult = ref<{ success?: boolean; message?: string } | null>(null);
 const saveMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
+const envConfigStatus = ref<string>('');
 
 const isWebDAVValid = computed(() => {
   return config.webdav.url.trim() &&
@@ -63,17 +64,49 @@ onMounted(async () => {
 async function loadConfig() {
   isLoading.value = true;
   try {
-    const result = await browser.storage.local.get('extensionConfig');
+    console.log('[Options] 开始加载配置...');
+    const result = await browser.storage.local.get(['extensionConfig', '_envConfigInit']);
+
+    console.log('[Options] Storage 读取结果:', {
+      hasKey: 'extensionConfig' in result,
+      valueType: typeof result.extensionConfig,
+      envInitStatus: result._envConfigInit
+    });
+
+    // 读取环境变量初始化状态
+    if (result._envConfigInit) {
+      const initStatus = result._envConfigInit;
+      const statusEmoji = {
+        'success': '✅',
+        'no-env': 'ℹ️',
+        'has-config': '📋',
+        'error': '❌'
+      }[initStatus.status] || '❓';
+
+      envConfigStatus.value = `${statusEmoji} ${initStatus.message}`;
+      console.log('[Options] 环境变量初始化状态:', initStatus);
+    }
+
     if (result.extensionConfig) {
       Object.assign(config, result.extensionConfig);
 
       // 配置迁移: 为已有配置添加默认的 authType
       if (!config.webdav.authType) {
-        config.webdav.authType = 'basic';  // Default to 'basic' for better browser compatibility
+        config.webdav.authType = 'basic';
       }
+
+      console.log('[Options] ✓ 从 storage 加载配置成功');
+      console.log('[Options] 配置摘要:', {
+        hasWebDAV: !!config.webdav?.url,
+        titleTemplate: config.titleTemplate,
+        downloadDirectory: config.downloadDirectory
+      });
+    } else {
+      console.log('[Options] ℹ️ Storage 为空，使用默认配置');
+      console.log('[Options] 提示：如果配置了环境变量，应该在 background 初始化时已写入 storage');
     }
   } catch (error) {
-    console.error('Failed to load config:', error);
+    console.error('[Options] 加载配置失败:', error);
     showMessage('error', '加载配置失败');
   } finally {
     isLoading.value = false;
@@ -367,6 +400,10 @@ async function importConfigFromFile() {
           <div>
             <h1 class="text-2xl font-bold text-gray-900">MD Save 设置</h1>
             <p class="text-sm text-gray-600">管理扩展的功能配置和选项</p>
+            <!-- 环境变量初始化状态 -->
+            <p v-if="envConfigStatus" class="text-xs text-gray-500 mt-1">
+              {{ envConfigStatus }}
+            </p>
           </div>
         </div>
 
@@ -657,6 +694,46 @@ async function importConfigFromFile() {
                 />
                 <div class="mt-1 text-xs text-gray-500">
                   支持变量: &#123;&#123;title&#125;&#125; (页面标题), &#123;&#123;date&#125;&#125; (YYYY-MM-DD), &#123;&#123;time&#125;&#125; (HH:MM:SS), &#123;&#123;domain&#125;&#125; (网站域名)
+                </div>
+
+                <!-- 目录支持说明 -->
+                <div class="mt-3 p-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-md">
+                  <div class="flex items-start gap-2 mb-2">
+                    <Folder class="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                    <div class="flex-1">
+                      <p class="text-xs font-semibold text-green-900 mb-1.5">✨ 目录支持（使用 / 创建嵌套目录）</p>
+                      <div class="space-y-1.5 text-xs">
+                        <div>
+                          <span class="text-green-700 font-medium">✅ 本地下载：</span>
+                          <code class="ml-1 px-1.5 py-0.5 bg-white/70 rounded text-green-800 font-mono text-xs">&#123;&#123;date&#125;&#125;/&#123;&#123;title&#125;&#125;</code>
+                          <span class="ml-1 text-gray-600">→ </span>
+                          <code class="px-1.5 py-0.5 bg-white/70 rounded text-gray-700 font-mono text-xs">~/Downloads/2025-11-05/文章标题.md</code>
+                        </div>
+                        <div>
+                          <span class="text-blue-700 font-medium">✅ WebDAV：</span>
+                          <code class="ml-1 px-1.5 py-0.5 bg-white/70 rounded text-blue-800 font-mono text-xs">&#123;&#123;date&#125;&#125;/&#123;&#123;title&#125;&#125;</code>
+                          <span class="ml-1 text-gray-600">→ </span>
+                          <code class="px-1.5 py-0.5 bg-white/70 rounded text-gray-700 font-mono text-xs">2025-11-05/文章标题.md</code>
+                        </div>
+                      </div>
+                      <div class="mt-2 pt-2 border-t border-green-200/50">
+                        <p class="text-xs text-blue-800"><strong>配合自定义下载路径：</strong></p>
+                        <div class="mt-1 space-y-1 text-xs text-gray-700 bg-white/50 p-2 rounded">
+                          <div><strong>配置：</strong> customDownloadPath = <code class="px-1 py-0.5 bg-white rounded font-mono">MyNotes/Web</code></div>
+                          <div><strong>模板：</strong> <code class="px-1 py-0.5 bg-white rounded font-mono">&#123;&#123;date&#125;&#125;/&#123;&#123;title&#125;&#125;</code></div>
+                          <div><strong>结果：</strong> <code class="px-1 py-0.5 bg-green-100 rounded font-mono text-green-800">~/Downloads/MyNotes/Web/2025-11-05/文章标题.md</code></div>
+                        </div>
+                        <div class="mt-2 space-y-0.5 text-xs text-gray-700">
+                          <div><strong>更多示例：</strong></div>
+                          <div>• <code class="px-1 py-0.5 bg-white/70 rounded font-mono text-xs">&#123;&#123;domain&#125;&#125;/&#123;&#123;date&#125;&#125;</code> → 按网站分类</div>
+                          <div>• <code class="px-1 py-0.5 bg-white/70 rounded font-mono text-xs">2025/&#123;&#123;date&#125;&#125;/&#123;&#123;title&#125;&#125;</code> → 多层目录</div>
+                        </div>
+                        <div class="mt-1.5 text-xs text-purple-700">
+                          <strong>限制：</strong>最多10层嵌套，自动过滤 <code class="px-1 py-0.5 bg-white/70 rounded font-mono">..</code> 等不安全字符
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

@@ -14,6 +14,12 @@ stats-*.json
 .wxt
 web-ext.config.ts
 
+# Environment variables (keep .env.example, .env.development, .env.production)
+.env.local
+.env.*.local
+.env.development
+.env.*.development
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -24,3 +30,4 @@ web-ext.config.ts
 *.njsproj
 *.sln
 *.sw?
+.history

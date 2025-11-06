@@ -321,6 +321,7 @@ export default defineContentScript({
           return;
         }
         clearFilenameError();
+        // 保留路径中的 / 符号，让 Downloads API 自动创建目录
         saveToLocal(content, filename);
       });
 
@@ -350,6 +351,8 @@ export default defineContentScript({
         previewModal.remove();
         previewModal = null;
       }
+      // Clear cached content to prevent memory leak
+      cachedProcessedContent = null;
     }
 
     // 保存到本地
@@ -361,27 +364,17 @@ export default defineContentScript({
           return;
         }
 
-        // 使用 Web 标准 API 下载（content script 完全支持）
-        const blob = new Blob([cachedProcessedContent.content], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
+        // 读取配置获取下载路径
+        const storageResult = await browser.storage.local.get('extensionConfig');
+        const config = storageResult.extensionConfig;
 
-        // 创建隐藏的下载链接
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.style.display = 'none';
+        // 构建完整下载路径
+        let downloadPath = '';
+        if (config?.downloadDirectory === 'custom' && config?.customDownloadPath) {
+          downloadPath = config.customDownloadPath.trim();
+        }
 
-        // 触发下载
-        document.body.appendChild(a);
-        a.click();
-
-        // 清理
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-
-        // 准备页面信息并异步记录历史
+        // 准备页面信息
         const pageInfo = {
           url: content.url,
           title: content.title,
@@ -389,20 +382,26 @@ export default defineContentScript({
           contentPreview: content.markdown.substring(0, 100)
         };
 
-        // 异步记录历史（不阻塞用户界面）
-        browser.runtime.sendMessage({
-          type: 'RECORD_HISTORY',
+        // 使用 background script 的 DOWNLOAD_FILE 消息
+        // 注意：filename 已经包含了 titleTemplate 生成的路径（如 2025-11-05/文章.md）
+        // downloadPath 是用户配置的自定义路径（如 MyNotes/Web）
+        // 最终路径会是：~/Downloads/MyNotes/Web/2025-11-05/文章.md
+        const response = await browser.runtime.sendMessage({
+          type: 'DOWNLOAD_FILE',
           data: {
-            pageInfo,
-            filename,
-            savePath: filename, // 默认下载目录，路径就是文件名
-            saveLocation: 'local',
-            fileSize: blob.size
+            filename,  // 保留 / 的完整路径
+            content: cachedProcessedContent.content,
+            downloadPath,  // 自定义下载路径
+            pageInfo
           }
-        }).catch(err => console.error('Failed to record history:', err));
+        });
 
-        showMessage('文件下载成功', 'success');
-        closePreviewModal();
+        if (response?.success) {
+          showMessage('文件下载成功', 'success');
+          closePreviewModal();
+        } else {
+          throw new Error(response?.error || '下载失败');
+        }
       } catch (error: any) {
         showMessage(`下载失败: ${error?.message}`, 'error');
       }

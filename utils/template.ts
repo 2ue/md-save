@@ -67,16 +67,18 @@ export function replaceTemplateVariables(templateString: string, data: TemplateD
 
 /**
  * Generate filename from template
+ * Note: Preserves '/' to support directory structures (e.g., {{date}}/{{title}})
+ * For local downloads, caller should flatten paths by replacing '/' with '_'
  */
 export function generateFilename(titleTemplate: string, data: TemplateData): string {
   console.log('[Template] generateFilename input - template:', titleTemplate, 'data:', JSON.stringify(data, null, 2));
-  
+
   const filename = replaceTemplateVariables(titleTemplate, data);
   console.log('[Template] generateFilename after template replacement:', filename);
-  
-  // Clean up filename - remove invalid characters
+
+  // Clean up filename - remove invalid characters but preserve '/' for directory support
   const cleanFilename = filename
-    .replace(/[<>:"/\\|?*]/g, '-') // Replace invalid filename characters
+    .replace(/[<>:"|?*\\]/g, '-') // Replace invalid filename characters (preserve / for paths)
     .replace(/\s+/g, '_') // Replace spaces with underscores
     .replace(/-+/g, '-') // Replace multiple dashes with single dash
     .replace(/_+/g, '_') // Replace multiple underscores with single underscore

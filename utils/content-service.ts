@@ -10,6 +10,11 @@ export interface ProcessedContent {
 
 /**
  * Content processing service
+ *
+ * 配置加载策略：
+ * - 只从 browser.storage.local 读取配置
+ * - 环境变量在 background.ts 初始化时已写入 storage
+ * - 保持单一数据来源，避免多处读取环境变量
  */
 export class ContentService {
   private config: ExtensionConfig = DEFAULT_CONFIG;
@@ -22,9 +27,12 @@ export class ContentService {
       const result = await browser.storage.local.get('extensionConfig');
       if (result.extensionConfig) {
         this.config = { ...DEFAULT_CONFIG, ...result.extensionConfig };
+      } else {
+        this.config = { ...DEFAULT_CONFIG };
       }
     } catch (error) {
       console.error('Failed to load config:', error);
+      this.config = { ...DEFAULT_CONFIG };
     }
   }
 

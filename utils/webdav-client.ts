@@ -1,5 +1,6 @@
 import { AuthType, createClient, WebDAVClient as WebDAVClientType } from 'webdav';
 import type { WebDAVConfig, ExtensionConfig } from '@/types/config';
+import { sanitizePath } from '@/utils/path-security';
 
 // Re-export WebDAVConfig for convenience
 export type { WebDAVConfig };
@@ -47,12 +48,20 @@ export class WebDAVClient {
   }
 
   /**
-   * 标准化路径格式
+   * 标准化路径格式，并进行安全清理
+   * Uses unified path security utility for consistency
    */
   private normalizePath(path?: string): string {
     if (!path || path === '/') return '/';
-    const cleaned = path.startsWith('/') ? path : `/${path}`;
-    return cleaned.endsWith('/') ? cleaned : `${cleaned}/`;
+
+    // Use unified sanitizePath from path-security.ts
+    const cleaned = sanitizePath(path);
+    if (!cleaned) return '/';
+
+    // Ensure leading slash for WebDAV absolute paths
+    const withLeadingSlash = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+    // Ensure trailing slash for directory paths
+    return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
   }
 
   /**

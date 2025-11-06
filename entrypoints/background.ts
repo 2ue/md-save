@@ -1,12 +1,92 @@
 import { WebDAVClient, type WebDAVConfig } from '@/utils/webdav-client';
 import type { HistoryRecord } from '@/types/history';
 import { nanoid } from 'nanoid';
+import { buildSafePath, isPathSafe, sanitizeTemplateFilename } from '@/utils/path-security';
+import { hasValidEnvConfig, applyEnvConfig, getEnvConfigInfo } from '@/utils/env-config';
+import { DEFAULT_CONFIG } from '@/types/config';
 
 const HISTORY_STORAGE_KEY = 'saveHistory';
 const MAX_HISTORY_RECORDS = 1000;
 
 export default defineBackground(() => {
   console.log('MD Save Extension loaded!', { id: browser.runtime.id });
+
+  // 初始化：检查并应用环境变量配置到 storage（仅在 storage 为空时）
+  (async () => {
+    try {
+      console.log('[Background] 开始检查配置初始化...');
+      const result = await browser.storage.local.get(['extensionConfig', '_envConfigInit']);
+
+      console.log('[Background] Storage 读取结果:', {
+        hasKey: 'extensionConfig' in result,
+        valueType: typeof result.extensionConfig,
+        value: result.extensionConfig,
+        envInitStatus: result._envConfigInit
+      });
+
+      const hasEnvConfig = hasValidEnvConfig();
+      console.log('[Background] 环境变量配置检查:', {
+        hasValidEnvConfig: hasEnvConfig
+      });
+
+      if (!result.extensionConfig) {
+        console.log('[Background] ✓ Storage 为空（未找到 extensionConfig）');
+
+        if (hasEnvConfig) {
+          console.log('[Background] ✓ 检测到有效的环境变量配置');
+          const config = applyEnvConfig(DEFAULT_CONFIG);
+          console.log('[Background] 应用后的配置:', config);
+
+          await browser.storage.local.set({
+            extensionConfig: config,
+            _envConfigInit: {
+              status: 'success',
+              message: '环境变量配置已自动加载',
+              timestamp: Date.now()
+            }
+          });
+          console.log('[Background] ✓ 环境变量配置已成功写入 storage');
+          console.log(getEnvConfigInfo());
+        } else {
+          console.log('[Background] ℹ️ 未检测到环境变量配置，使用默认配置');
+          await browser.storage.local.set({
+            _envConfigInit: {
+              status: 'no-env',
+              message: '未检测到环境变量配置',
+              timestamp: Date.now()
+            }
+          });
+        }
+      } else {
+        console.log('[Background] ℹ️ Storage 中已有配置，跳过环境变量初始化');
+        console.log('[Background] 现有配置摘要:', {
+          hasWebDAV: !!result.extensionConfig.webdav?.url,
+          titleTemplate: result.extensionConfig.titleTemplate,
+          downloadDirectory: result.extensionConfig.downloadDirectory
+        });
+
+        // 更新初始化状态（表示已有用户配置）
+        if (!result._envConfigInit) {
+          await browser.storage.local.set({
+            _envConfigInit: {
+              status: 'has-config',
+              message: 'Storage 中已有用户配置，未使用环境变量',
+              timestamp: Date.now()
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[Background] 配置初始化失败:', error);
+      await browser.storage.local.set({
+        _envConfigInit: {
+          status: 'error',
+          message: `初始化失败: ${error.message}`,
+          timestamp: Date.now()
+        }
+      });
+    }
+  })();
 
   // 历史记录管理函数
   async function getHistory(): Promise<HistoryRecord[]> {
@@ -101,15 +181,51 @@ export default defineBackground(() => {
     if (message.type === 'DOWNLOAD_FILE') {
       const { filename, content, downloadPath, pageInfo } = message.data;
 
+      console.log('[Background] DOWNLOAD_FILE received:', {
+        filename,
+        downloadPath,
+        contentLength: content?.length,
+        hasPageInfo: !!pageInfo
+      });
+
       (async () => {
         try {
-          // 创建Blob并下载
-          const blob = new Blob([content], { type: 'text/markdown' });
-          const url = URL.createObjectURL(blob);
+          // Validate path safety
+          console.log('[Background] Validating download path:', downloadPath);
+          if (downloadPath && !isPathSafe(downloadPath)) {
+            console.error('[Background] Unsafe download path detected:', downloadPath);
+            sendResponse({
+              success: false,
+              error: '下载路径包含不安全字符'
+            });
+            return;
+          }
+
+          // Sanitize template-generated filename (preserves directory structures)
+          console.log('[Background] Original filename:', filename);
+          const sanitizedFilename = sanitizeTemplateFilename(filename);
+          console.log('[Background] Sanitized filename:', sanitizedFilename);
+
+          if (!isPathSafe(sanitizedFilename)) {
+            console.error('[Background] Unsafe filename detected:', sanitizedFilename);
+            sendResponse({
+              success: false,
+              error: '文件名包含不安全字符'
+            });
+            return;
+          }
+
+          // Build safe path using security utility
+          const safePath = downloadPath ? buildSafePath(downloadPath, sanitizedFilename) : sanitizedFilename;
+          console.log('[Background] Final safe path:', safePath);
+
+          // Convert content to data URL (avoid URL.createObjectURL in background script)
+          console.log('[Background] Creating data URL...');
+          const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(content)}`;
 
           const downloadOptions: any = {
-            url: url,
-            filename: downloadPath ? `${downloadPath}/${filename}` : filename
+            url: dataUrl,
+            filename: safePath
           };
 
           // 如果没有自定义路径，显示另存为对话框
@@ -117,26 +233,35 @@ export default defineBackground(() => {
             downloadOptions.saveAs = true;
           }
 
-          const downloadId = await browser.downloads.download(downloadOptions);
+          console.log('[Background] Download options:', downloadOptions);
 
-          URL.revokeObjectURL(url);
+          const downloadId = await browser.downloads.download(downloadOptions);
+          console.log('[Background] Download started, ID:', downloadId);
 
           // 仅记录成功的历史
           if (pageInfo) {
-            await addHistoryRecord({
+            const historyRecord = {
               url: pageInfo.url,
               title: pageInfo.title,
               domain: pageInfo.domain || new URL(pageInfo.url).hostname,
               filename,
-              savePath: downloadPath ? `${downloadPath}/${filename}` : filename,
-              saveLocation: 'local',
+              savePath: safePath,
+              saveLocation: 'local' as const,
               contentPreview: pageInfo.contentPreview || '',
               fileSize: new Blob([content]).size
-            });
+            };
+            console.log('[Background] Adding history record:', historyRecord);
+            await addHistoryRecord(historyRecord);
           }
 
+          console.log('[Background] Download completed successfully');
           sendResponse({ success: true, downloadId });
         } catch (error: any) {
+          console.error('[Background] Download error:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+          });
           sendResponse({ success: false, error: error?.message });
         }
       })();
