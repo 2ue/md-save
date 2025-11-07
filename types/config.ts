@@ -15,6 +15,11 @@ export interface ExtensionConfig {
   titleTemplate: string;
   contentTemplate: string;
   webdav: WebDAVConfig;
+
+  // 图片下载配置（可选，向后兼容）
+  imageDownload?: {
+    enabled: boolean;              // 是否启用图片下载，默认 false
+  };
 }
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
@@ -35,5 +40,8 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
     password: '',
     path: '/',
     authType: 'basic'
+  },
+  imageDownload: {
+    enabled: false  // 默认禁用，保持向后兼容
   }
 };

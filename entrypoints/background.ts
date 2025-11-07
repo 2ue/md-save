@@ -4,12 +4,30 @@ import { nanoid } from 'nanoid';
 import { buildSafePath, isPathSafe, sanitizeTemplateFilename } from '@/utils/path-security';
 import { hasValidEnvConfig, applyEnvConfig, getEnvConfigInfo } from '@/utils/env-config';
 import { DEFAULT_CONFIG } from '@/types/config';
+import {
+  SaveStrategyManager,
+  LocalSaveStrategyImpl,
+  WebDAVSaveStrategyImpl,
+  ImageDownloadService,
+  type SaveContext,
+  type SaveResult,
+  type SaveStrategy
+} from './utils/save';
 
 const HISTORY_STORAGE_KEY = 'saveHistory';
 const MAX_HISTORY_RECORDS = 1000;
 
 export default defineBackground(() => {
   console.log('MD Save Extension loaded!', { id: browser.runtime.id });
+
+  // 初始化策略管理器（Background Script）
+  const backgroundStrategyManager = new SaveStrategyManager();
+  backgroundStrategyManager.register(new LocalSaveStrategyImpl());
+  backgroundStrategyManager.register(new WebDAVSaveStrategyImpl());
+  console.log('[SaveStrategy] Registered strategies:', backgroundStrategyManager.list().map((s: SaveStrategy) => s.name));
+
+  // 初始化图片下载服务
+  const imageDownloadService = new ImageDownloadService();
 
   // 初始化：检查并应用环境变量配置到 storage（仅在 storage 为空时）
   (async () => {
@@ -138,6 +156,83 @@ export default defineBackground(() => {
 
   // 处理下载请求和WebDAV上传
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // ========================================
+    // 新的统一保存消息（策略模式）
+    // ========================================
+    if (message.type === 'SAVE') {
+      (async () => {
+        try {
+          const { context, strategy } = message.data as { context: SaveContext; strategy: string };
+
+          console.log('[SaveStrategy] Received SAVE message:', {
+            strategy,
+            filename: context.filename,
+            hasImages: !!context.images,
+            imageCount: context.images?.length || 0
+          });
+
+          // 如果有图片任务，先在 Background Script 中下载
+          // （Background Script 无 CORS 限制）
+          if (context.images && context.images.length > 0) {
+            console.log('[SaveStrategy] Downloading images in background...');
+
+            // 下载图片，失败的自动回退到原 URL
+            const downloadResult = await imageDownloadService.download(context.images, context.markdown);
+            context.images = downloadResult.tasks;
+            context.markdown = downloadResult.markdown;  // 更新 Markdown（失败图片已回退）
+
+            const stats = context.images.reduce(
+              (acc, task) => {
+                acc[task.status]++;
+                return acc;
+              },
+              { pending: 0, downloading: 0, success: 0, failed: 0 }
+            );
+
+            console.log('[SaveStrategy] Image download complete:', stats);
+          }
+
+          // 直接执行保存策略（避免循环消息传递）
+          const strategyImpl = backgroundStrategyManager.get(strategy);
+          if (!strategyImpl) {
+            throw new Error(`Unknown strategy: ${strategy}`);
+          }
+
+          const result = await strategyImpl.save(context);
+
+          console.log('[SaveStrategy] Save result:', result);
+
+          // 如果成功，记录历史
+          if (result.success && result.savedPath) {
+            await addHistoryRecord({
+              url: context.url,
+              title: context.title,
+              domain: new URL(context.url).hostname,
+              filename: context.filename,
+              savePath: result.savedPath,
+              saveLocation: strategy === 'local' ? 'local' : 'webdav',
+              contentPreview: context.markdown.substring(0, 100),
+              fileSize: result.metadata?.fileSize || new Blob([context.markdown]).size
+            });
+          }
+
+          sendResponse(result);
+        } catch (error) {
+          console.error('[SaveStrategy] Save error:', error);
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            errorCode: 'UNKNOWN'
+          } as SaveResult);
+        }
+      })();
+      return true; // 保持消息通道开放
+    }
+
+    // ========================================
+    // 旧的消息处理（保持向后兼容）
+    // ========================================
+
     // 获取历史记录
     if (message.type === 'GET_HISTORY') {
       (async () => {

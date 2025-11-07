@@ -123,11 +123,14 @@ export class WebDAVClient {
   /**
    * 上传文件的主要方法
    * @param filename 文件名（可能包含路径）
-   * @param content 文件内容
+   * @param content 文件内容（文本或二进制）
    * @param overwrite 是否覆盖已存在文件，默认false
    */
-  async uploadFile(filename: string, content: string, overwrite: boolean = false): Promise<UploadResult> {
-    console.log('WebDAV uploadFile called:', { filename, overwrite, contentLength: content.length });
+  async uploadFile(filename: string, content: string | ArrayBuffer | Buffer, overwrite: boolean = false): Promise<UploadResult> {
+    const contentLength = content instanceof ArrayBuffer
+      ? content.byteLength
+      : (content as any).length;
+    console.log('WebDAV uploadFile called:', { filename, overwrite, contentLength });
     try {
       const { directory, filename: file } = this.parseFilePath(filename);
       const fullPath = `${directory}${file}`;

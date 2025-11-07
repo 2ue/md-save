@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted, computed } from 'vue';
-import { Save, TestTube, Settings, FileText, Cloud, HardDrive, Eye, EyeOff, Upload, Download, FolderSync, FileDown, FileUp, RotateCcw, Folder, Lightbulb, AlertTriangle } from 'lucide-vue-next';
+import { Save, TestTube, Settings, FileText, Cloud, HardDrive, Eye, EyeOff, Upload, Download, FolderSync, FileDown, FileUp, RotateCcw, Folder, Lightbulb, AlertTriangle, Image } from 'lucide-vue-next';
 import type { ExtensionConfig } from '../../types';
 import { DEFAULT_CONFIG } from '../../types/config';
 
@@ -29,6 +29,18 @@ const isWebDAVValid = computed(() => {
 
 const isConfigSyncValid = computed(() => {
   return isWebDAVValid.value && config.configSyncDir?.trim();
+});
+
+// 图片下载开关的计算属性
+const imageDownloadEnabled = computed({
+  get: () => config.imageDownload?.enabled ?? false,
+  set: (value: boolean) => {
+    if (!config.imageDownload) {
+      config.imageDownload = { enabled: value };
+    } else {
+      config.imageDownload.enabled = value;
+    }
+  }
 });
 
 // 推断默认下载目录（基于操作系统）
@@ -540,6 +552,60 @@ async function importConfigFromFile() {
                         <code class="text-xs font-mono text-blue-800 font-semibold">{{ fullSavePath }}</code>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 图片下载配置 -->
+            <div class="bg-white rounded-xl p-6 shadow-sm">
+              <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-3">
+                <Image class="w-5 h-5" />
+                图片下载
+              </h2>
+
+              <p class="text-sm text-gray-600 mb-4">
+                保存网页时自动下载图片到本地。启用后图片将保存到 assets/ 目录，Markdown 中的图片链接会被替换为本地路径。
+              </p>
+
+              <div class="space-y-4">
+                <!-- 启用开关 -->
+                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div class="flex-1">
+                    <div class="font-medium text-gray-900">启用图片下载</div>
+                    <div class="text-sm text-gray-600 mt-1">
+                      自动下载网页中的图片，避免图片失效
+                    </div>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      v-model="imageDownloadEnabled"
+                      class="sr-only peer"
+                    />
+                    <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <!-- 说明和影响 -->
+                <div class="space-y-3">
+                  <div class="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                    <p class="flex items-start gap-1.5 text-xs text-blue-800">
+                      <Lightbulb class="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <span><strong>本地下载：</strong>图片和 Markdown 将打包为 ZIP 文件下载</span>
+                    </p>
+                  </div>
+                  <div class="p-3 bg-purple-50 border border-purple-200 rounded-md">
+                    <p class="flex items-start gap-1.5 text-xs text-purple-800">
+                      <Cloud class="w-3.5 h-3.5 text-purple-600 flex-shrink-0 mt-0.5" />
+                      <span><strong>WebDAV 保存：</strong>图片将批量上传到 assets/ 目录，保持目录结构</span>
+                    </p>
+                  </div>
+                  <div class="p-3 bg-gray-50 border border-gray-300 rounded-md">
+                    <p class="flex items-start gap-1.5 text-xs text-gray-700">
+                      <AlertTriangle class="w-3.5 h-3.5 text-gray-600 flex-shrink-0 mt-0.5" />
+                      <span><strong>注意：</strong>某些网站可能阻止图片下载，这种情况下会保留原图片链接</span>
+                    </p>
                   </div>
                 </div>
               </div>

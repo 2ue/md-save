@@ -1,11 +1,26 @@
 import { ContentExtractor } from '@/utils/content-extractor';
 import { MarkdownConverter } from '@/utils/markdown-converter';
-import { WebDAVClient, type WebDAVConfig } from '@/utils/webdav-client';
 import { contentService } from '@/utils/content-service';
+import {
+  contentStrategyManager,
+  LocalSaveStrategy,
+  WebDAVSaveStrategy,
+  ImageDownloadService,
+  type SaveContext,
+  type SaveResult
+} from './utils/save';
 
 export default defineContentScript({
   matches: ['http://*/*', 'https://*/*'],
   main() {
+    // 初始化保存策略管理器
+    contentStrategyManager.register(new LocalSaveStrategy());
+    contentStrategyManager.register(new WebDAVSaveStrategy());
+    console.log('[ContentScript] Registered save strategies:', contentStrategyManager.list().map(s => s.name));
+
+    // 初始化图片下载服务
+    const imageDownloadService = new ImageDownloadService();
+
     let isSelectionMode = false;
     let currentHighlight: HTMLElement | null = null;
     let originalOutline: string = '';
@@ -321,8 +336,7 @@ export default defineContentScript({
           return;
         }
         clearFilenameError();
-        // 保留路径中的 / 符号，让 Downloads API 自动创建目录
-        saveToLocal(content, filename);
+        saveContent(content, filename, 'local', filenameInput, showFilenameError);
       });
 
       saveWebdavBtn?.addEventListener('click', () => {
@@ -332,7 +346,7 @@ export default defineContentScript({
           return;
         }
         clearFilenameError();
-        saveToWebDAV(content, filename, filenameInput, showFilenameError);
+        saveContent(content, filename, 'webdav', filenameInput, showFilenameError);
       });
 
       // 点击背景关闭
@@ -355,8 +369,14 @@ export default defineContentScript({
       cachedProcessedContent = null;
     }
 
-    // 保存到本地
-    async function saveToLocal(content: any, filename: string) {
+    // 统一的保存函数（使用策略模式）
+    async function saveContent(
+      content: any,
+      filename: string,
+      saveMethod: 'local' | 'webdav',
+      filenameInput?: HTMLInputElement,
+      showFilenameError?: (message: string) => void
+    ) {
       try {
         // 使用缓存的已处理内容，避免重复处理
         if (!cachedProcessedContent) {
@@ -364,102 +384,73 @@ export default defineContentScript({
           return;
         }
 
-        // 读取配置获取下载路径
+        // 读取配置
         const storageResult = await browser.storage.local.get('extensionConfig');
         const config = storageResult.extensionConfig;
 
-        // 构建完整下载路径
-        let downloadPath = '';
-        if (config?.downloadDirectory === 'custom' && config?.customDownloadPath) {
-          downloadPath = config.customDownloadPath.trim();
+        // 🔍 调试日志：查看配置状态
+        console.log('[ContentScript] ========== 保存配置检查 ==========');
+        console.log('[ContentScript] 保存方式:', saveMethod);
+        console.log('[ContentScript] 完整配置:', config);
+        console.log('[ContentScript] imageDownload 字段:', config?.imageDownload);
+        console.log('[ContentScript] enabled 值:', config?.imageDownload?.enabled);
+        console.log('[ContentScript] ==========================================');
+
+        // 准备保存内容（支持图片下载）
+        let markdown = cachedProcessedContent.content;
+        let imageTasks = undefined;
+
+        // 如果启用了图片下载，提取并准备图片任务
+        if (config?.imageDownload?.enabled) {
+          console.log('[ContentScript] ✅ 图片下载已启用，开始准备图片...');
+          const prepared = imageDownloadService.prepare(markdown, filename);
+          markdown = prepared.markdown;  // URL已替换为本地路径
+          imageTasks = prepared.tasks;
+          console.log('[ContentScript] 找到图片数量:', imageTasks.length);
+          console.log('[ContentScript] Markdown URL 已替换:', markdown.includes('./assets/'));
+        } else {
+          console.log('[ContentScript] ❌ 图片下载未启用，跳过图片处理');
+          console.log('[ContentScript] 原因: config?.imageDownload?.enabled =', config?.imageDownload?.enabled);
         }
 
-        // 准备页面信息
-        const pageInfo = {
-          url: content.url,
+        // 构建保存上下文
+        const context: SaveContext = {
+          markdown,
+          filename,
+          images: imageTasks,
+          assetsDir: 'assets',
           title: content.title,
-          domain: new URL(content.url).hostname,
-          contentPreview: content.markdown.substring(0, 100)
+          url: content.url,
+          timestamp: Date.now(),
+          config
         };
 
-        // 使用 background script 的 DOWNLOAD_FILE 消息
-        // 注意：filename 已经包含了 titleTemplate 生成的路径（如 2025-11-05/文章.md）
-        // downloadPath 是用户配置的自定义路径（如 MyNotes/Web）
-        // 最终路径会是：~/Downloads/MyNotes/Web/2025-11-05/文章.md
-        const response = await browser.runtime.sendMessage({
-          type: 'DOWNLOAD_FILE',
-          data: {
-            filename,  // 保留 / 的完整路径
-            content: cachedProcessedContent.content,
-            downloadPath,  // 自定义下载路径
-            pageInfo
-          }
-        });
+        console.log('[ContentScript] Saving with strategy:', saveMethod);
 
-        if (response?.success) {
-          showMessage('文件下载成功', 'success');
+        // 零分支！使用策略管理器
+        const result: SaveResult = await contentStrategyManager.save(context, saveMethod);
+
+        console.log('[ContentScript] Save result:', result);
+
+        // 处理结果
+        if (result.success) {
+          showMessage('保存成功', 'success');
           closePreviewModal();
         } else {
-          throw new Error(response?.error || '下载失败');
-        }
-      } catch (error: any) {
-        showMessage(`下载失败: ${error?.message}`, 'error');
-      }
-    }
-
-    // 保存到WebDAV
-    async function saveToWebDAV(
-      content: any,
-      filename: string,
-      filenameInput: HTMLInputElement,
-      showFilenameError: (message: string) => void
-    ) {
-      try {
-        const storageResult = await browser.storage.local.get('extensionConfig');
-        const webdavConfig: WebDAVConfig = storageResult.extensionConfig?.webdav;
-
-        if (!webdavConfig || !webdavConfig.url || !webdavConfig.username || !webdavConfig.password) {
-          showMessage('请先在插件中配置WebDAV', 'error');
-          return;
-        }
-
-        // 使用缓存的已处理内容，避免重复处理
-        if (!cachedProcessedContent) {
-          showMessage('内容处理失败，请重试', 'error');
-          return;
-        }
-
-        // 准备页面信息用于历史记录
-        const pageInfo = {
-          url: content.url,
-          title: content.title,
-          domain: new URL(content.url).hostname,
-          contentPreview: content.markdown.substring(0, 100)
-        };
-
-        // 动态导入 WebDAV 服务
-        const { uploadToWebDAV } = await import('@/utils/webdav-service');
-
-        await uploadToWebDAV(
-          cachedProcessedContent,
-          filename,
-          webdavConfig,
-          {
-            onSuccess: () => {
-              showMessage('保存到WebDAV成功', 'success');
-              closePreviewModal();
-            },
-            onFileExists: () => {
+          // 特殊处理 WebDAV 文件已存在的情况
+          if (result.errorCode === 'VALIDATION' && result.error?.includes('already exists')) {
+            if (showFilenameError) {
               showFilenameError('文件已存在，请修改文件名');
-            },
-            onError: (error) => {
-              showMessage(`保存到WebDAV失败: ${error}`, 'error');
+            } else {
+              showMessage('文件已存在，请修改文件名', 'error');
             }
-          },
-          pageInfo
-        );
+          } else {
+            showMessage(`保存失败: ${result.error || '未知错误'}`, 'error');
+          }
+        }
       } catch (error) {
-        showMessage('保存到WebDAV失败', 'error');
+        console.error('[ContentScript] Save error:', error);
+        showMessage(`保存失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
       }
     }
 

@@ -25,6 +25,7 @@
     "webdav": "^5.8.0"
   },
   "devDependencies": {
+    "@types/jszip": "^3.4.1",
     "@types/lodash-es": "^4.17.12",
     "@types/turndown": "^5.0.5",
     "@wxt-dev/module-vue": "^1.0.2",
