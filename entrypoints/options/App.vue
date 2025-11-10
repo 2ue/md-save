@@ -8,6 +8,13 @@ import { DEFAULT_CONFIG } from '../../types/config';
 type TabType = 'storage' | 'template' | 'sync';
 const activeTab = ref<TabType>('storage');
 
+// 环境变量初始化状态类型
+type EnvInitStatus = 'success' | 'no-env' | 'has-config' | 'error';
+interface EnvConfigInit {
+  status: EnvInitStatus;
+  message: string;
+}
+
 const config = reactive<ExtensionConfig>({ ...DEFAULT_CONFIG });
 const isLoading = ref(false);
 const isSaving = ref(false);
@@ -87,13 +94,14 @@ async function loadConfig() {
 
     // 读取环境变量初始化状态
     if (result._envConfigInit) {
-      const initStatus = result._envConfigInit;
-      const statusEmoji = {
+      const initStatus = result._envConfigInit as EnvConfigInit;
+      const statusEmojiMap: Record<EnvInitStatus, string> = {
         'success': '✅',
         'no-env': 'ℹ️',
         'has-config': '📋',
         'error': '❌'
-      }[initStatus.status] || '❓';
+      };
+      const statusEmoji = statusEmojiMap[initStatus.status] || '❓';
 
       envConfigStatus.value = `${statusEmoji} ${initStatus.message}`;
       console.log('[Options] 环境变量初始化状态:', initStatus);
@@ -221,7 +229,7 @@ function showMessage(type: 'success' | 'error', text: string) {
 
   // Create toast notification
   const toast = document.createElement('div');
-  toast.className = `fixed top-6 right-6 px-4 py-3 rounded-lg font-medium z-50 transition-all duration-300 transform translate-x-full ${
+  toast.className = `fixed top-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg font-medium z-50 transition-all duration-300 transform -translate-y-20 opacity-0 shadow-lg ${
     type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
   }`;
   toast.textContent = text;
@@ -230,12 +238,14 @@ function showMessage(type: 'success' | 'error', text: string) {
 
   // Animate in
   requestAnimationFrame(() => {
-    toast.style.transform = 'translateX(0)';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+    toast.style.opacity = '1';
   });
 
   // Auto remove after 3 seconds
   setTimeout(() => {
-    toast.style.transform = 'translateX(100%)';
+    toast.style.transform = 'translateX(-50%) translateY(-20px)';
+    toast.style.opacity = '0';
     setTimeout(() => {
       if (document.body.contains(toast)) {
         document.body.removeChild(toast);
