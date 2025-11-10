@@ -171,19 +171,25 @@ export default defineContentScript({
         timestamp: content.timestamp
       });
 
+      // 🔧 分离目录和文件名
+      const fullFilename = cachedProcessedContent.filename;
+      const parts = fullFilename.split('/');
+      const basename = parts[parts.length - 1];  // 提取最后一部分作为文件名
+      const directory = parts.slice(0, -1).join('/');  // 保留目录部分
+
+      // 存储目录部分（用于保存时重新组合）
+      let filenameDirectory = directory;
+
       const modal = document.createElement('div');
       modal.id = 'web-save-preview-modal';
       modal.style.cssText = `
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
+        top: 20px;
+        right: 20px;
+        width: auto;
+        height: auto;
+        background: none;
         z-index: 999999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       `;
 
@@ -192,16 +198,15 @@ export default defineContentScript({
         background: white;
         border-radius: 8px;
         padding: 24px;
-        max-width: 800px;
-        width: 90vw;
+        width: 600px;
         max-height: 85vh;
         overflow-y: auto;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.1);
       `;
 
       modalContent.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
-          <h3 style="margin: 0; color: #111827; font-size: 18px; font-weight: 600;">内容预览</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 16px;">
+          <h3 style="margin: 0; color: #111827; font-size: 18px; font-weight: 600;">内容保存确认</h3>
           <button id="close-preview" style="
             background: none;
             border: none;
@@ -223,7 +228,7 @@ export default defineContentScript({
         <!-- 文件名输入框 -->
         <div style="margin-bottom: 16px;">
           <label style="display: block; margin-bottom: 6px; font-size: 12px; font-weight: 500; color: #374151;">文件名</label>
-          <input type="text" id="filename-input" value="${cachedProcessedContent.filename}" style="
+          <input type="text" id="filename-input" value="${basename}" style="
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #d1d5db;
@@ -243,7 +248,7 @@ export default defineContentScript({
 
         <div style="margin-bottom: 20px;">
           <label style="display: block; margin-bottom: 6px; font-size: 12px; font-weight: 500; color: #374151;">内容</label>
-          <textarea readonly style="
+          <textarea id="content-textarea" style="
             width: 100%;
             height: 300px;
             border: 1px solid #e5e7eb;
@@ -254,7 +259,7 @@ export default defineContentScript({
             line-height: 1.6;
             resize: vertical;
             box-sizing: border-box;
-            background: #f9fafb;
+            background: white;
             color: #374151;
           ">${cachedProcessedContent.content}</textarea>
         </div>
@@ -329,30 +334,79 @@ export default defineContentScript({
       closeBtn?.addEventListener('click', () => closePreviewModal());
       cancelBtn?.addEventListener('click', () => closePreviewModal());
 
-      saveLocalBtn?.addEventListener('click', () => {
-        const filename = filenameInput.value.trim();
-        if (!filename) {
+      // 保存到本地按钮（带loading状态）
+      saveLocalBtn?.addEventListener('click', async () => {
+        const editedBasename = filenameInput.value.trim();
+        if (!editedBasename) {
           showFilenameError('请输入文件名');
           return;
         }
         clearFilenameError();
-        saveContent(content, filename, 'local', filenameInput, showFilenameError);
+
+        // 组合完整文件名：目录 + 编辑后的basename
+        const fullFilename = filenameDirectory
+          ? `${filenameDirectory}/${editedBasename}`
+          : editedBasename;
+
+        // 🔧 禁用所有按钮，显示loading
+        const buttons = [saveLocalBtn, saveWebdavBtn, cancelBtn, closeBtn];
+        const originalText = saveLocalBtn.textContent;
+
+        buttons.forEach(btn => {
+          (btn as HTMLButtonElement).disabled = true;
+          (btn as HTMLButtonElement).style.opacity = '0.5';
+          (btn as HTMLButtonElement).style.cursor = 'not-allowed';
+        });
+        saveLocalBtn.textContent = '保存中...';
+
+        try {
+          await saveContent(content, fullFilename, 'local', filenameInput, showFilenameError);
+        } finally {
+          // 恢复按钮状态
+          buttons.forEach(btn => {
+            (btn as HTMLButtonElement).disabled = false;
+            (btn as HTMLButtonElement).style.opacity = '1';
+            (btn as HTMLButtonElement).style.cursor = 'pointer';
+          });
+          saveLocalBtn.textContent = originalText;
+        }
       });
 
-      saveWebdavBtn?.addEventListener('click', () => {
-        const filename = filenameInput.value.trim();
-        if (!filename) {
+      // 保存到WebDAV按钮（带loading状态）
+      saveWebdavBtn?.addEventListener('click', async () => {
+        const editedBasename = filenameInput.value.trim();
+        if (!editedBasename) {
           showFilenameError('请输入文件名');
           return;
         }
         clearFilenameError();
-        saveContent(content, filename, 'webdav', filenameInput, showFilenameError);
-      });
 
-      // 点击背景关闭
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-          closePreviewModal();
+        // 组合完整文件名：目录 + 编辑后的basename
+        const fullFilename = filenameDirectory
+          ? `${filenameDirectory}/${editedBasename}`
+          : editedBasename;
+
+        // 🔧 禁用所有按钮，显示loading
+        const buttons = [saveLocalBtn, saveWebdavBtn, cancelBtn, closeBtn];
+        const originalText = saveWebdavBtn.textContent;
+
+        buttons.forEach(btn => {
+          (btn as HTMLButtonElement).disabled = true;
+          (btn as HTMLButtonElement).style.opacity = '0.5';
+          (btn as HTMLButtonElement).style.cursor = 'not-allowed';
+        });
+        saveWebdavBtn.textContent = '保存中...';
+
+        try {
+          await saveContent(content, fullFilename, 'webdav', filenameInput, showFilenameError);
+        } finally {
+          // 恢复按钮状态
+          buttons.forEach(btn => {
+            (btn as HTMLButtonElement).disabled = false;
+            (btn as HTMLButtonElement).style.opacity = '1';
+            (btn as HTMLButtonElement).style.cursor = 'pointer';
+          });
+          saveWebdavBtn.textContent = originalText;
         }
       });
 
@@ -374,7 +428,7 @@ export default defineContentScript({
       content: any,
       filename: string,
       saveMethod: 'local' | 'webdav',
-      filenameInput?: HTMLInputElement,
+      _filenameInput?: HTMLInputElement,
       showFilenameError?: (message: string) => void
     ) {
       try {
@@ -396,8 +450,9 @@ export default defineContentScript({
         console.log('[ContentScript] enabled 值:', config?.imageDownload?.enabled);
         console.log('[ContentScript] ==========================================');
 
-        // 准备保存内容（支持图片下载）
-        let markdown = cachedProcessedContent.content;
+        // 🔧 读取用户编辑后的内容
+        const contentTextarea = document.querySelector('#content-textarea') as HTMLTextAreaElement;
+        let markdown = contentTextarea ? contentTextarea.value : cachedProcessedContent.content;
         let imageTasks = undefined;
 
         // 如果启用了图片下载，提取并准备图片任务
