@@ -96,10 +96,11 @@ export default defineBackground(() => {
       }
     } catch (error) {
       console.error('[Background] 配置初始化失败:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       await browser.storage.local.set({
         _envConfigInit: {
           status: 'error',
-          message: `初始化失败: ${error.message}`,
+          message: `初始化失败: ${errorMessage}`,
           timestamp: Date.now()
         }
       });

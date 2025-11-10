@@ -158,7 +158,7 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
           .map(async (task) => {
             // 图片保存到与 Markdown 同级的 assets/ 目录
             const imagePath = `${imageBasePath}/${filenameDir}assets/${task.filename}`;
-            const imageUrl = URL.createObjectURL(task.blob);
+            const imageUrl = URL.createObjectURL(task.blob!); // 已通过 filter 检查
 
             return browser.downloads.download({
               url: imageUrl,

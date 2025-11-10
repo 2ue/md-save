@@ -27,13 +27,30 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   configSyncDir: '',
   downloadDirectory: 'default',
   customDownloadPath: '',
+
+  // 文件名模板
+  // 支持的变量：
+  // - 基础: {{title}}, {{url}}, {{domain}}
+  // - 时间（基于 dayjs）:
+  //   年月日: {{YYYY}}, {{YY}}, {{MM}}, {{M}}, {{DD}}, {{D}}
+  //   时分秒: {{HH}}, {{H}}, {{hh}}, {{h}}, {{mm}}, {{m}}, {{ss}}, {{s}}
+  //   星期: {{d}}, {{dd}}, {{ddd}}
+  //   组合（向后兼容）: {{date}} (YYYY-MM-DD), {{time}} (HH:mm:ss)
+  // 示例:
+  // - "{{title}}" -> article
+  // - "{{YYYY}}/{{MM}}/{{title}}" -> 2025/01/article
+  // - "{{title}}_{{YYYY}}{{MM}}{{DD}}" -> article_20250110
   titleTemplate: '{{title}}',
+
+  // 内容模板
+  // 支持所有文件名模板变量 + {{content}}
   contentTemplate: `---
 原文链接: {{url}}
 保存时间: {{date}}
 ---
 
 {{content}}`,
+
   webdav: {
     url: '',
     username: '',

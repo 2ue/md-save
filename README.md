@@ -127,7 +127,7 @@ pnpm zip:firefox    # Firefox
 
 #### 文件名模板
 ```
-{{date}}-{{title}}.md
+{{YYYY}}/{{MM}}/{{title}}
 ```
 
 #### 内容模板
@@ -141,13 +141,26 @@ date: {{date}} {{time}}
 {{content}}
 ```
 
-**可用变量**：
+**可用变量**（基于 [dayjs](https://day.js.org/)）：
+
+**基础变量**:
 - `{{title}}` - 页面标题
 - `{{url}}` - 页面 URL
 - `{{domain}}` - 域名
-- `{{date}}` - 日期（YYYY-MM-DD）
-- `{{time}}` - 时间（HH:MM:SS）
 - `{{content}}` - Markdown 内容
+
+**时间变量**:
+- 年月日: `{{YYYY}}`, `{{YY}}`, `{{MM}}`, `{{M}}`, `{{DD}}`, `{{D}}`
+- 时分秒: `{{HH}}`, `{{H}}`, `{{hh}}`, `{{h}}`, `{{mm}}`, `{{m}}`, `{{ss}}`, `{{s}}`
+- 星期: `{{d}}` (0-6), `{{dd}}` (Su), `{{ddd}}` (Sun)
+- 组合（向后兼容）: `{{date}}` (YYYY-MM-DD), `{{time}}` (HH:mm:ss)
+
+**示例**:
+```
+{{YYYY}}/{{MM}}/{{title}}           -> 2025/01/article
+{{title}}_{{YYYY}}{{MM}}{{DD}}      -> article_20250110
+{{date}}/{{title}}                  -> 2025-01-10/article
+```
 
 ### 4. 查看历史记录
 
@@ -167,6 +180,7 @@ date: {{date}} {{time}}
 - **图标**: [Lucide Vue](https://lucide.dev/)
 - **Markdown**: [Turndown](https://github.com/mixmark-io/turndown) + [GFM Plugin](https://github.com/mixmark-io/turndown-plugin-gfm)
 - **WebDAV**: [webdav](https://github.com/perry-mitchell/webdav-client)
+- **时间处理**: [Day.js](https://day.js.org/) - 轻量级日期库
 - **存储**: Browser Storage API
 
 ## 📁 项目结构
