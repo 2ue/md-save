@@ -21,6 +21,27 @@ export default defineContentScript({
     // 初始化图片下载服务
     const imageDownloadService = new ImageDownloadService();
 
+    // 监听图片下载进度（Background Script 通过 storage 传递进度）
+    browser.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes.imageDownloadProgress) {
+        const progress = changes.imageDownloadProgress.newValue;
+
+        if (progress) {
+          const { current, total } = progress;
+
+          // 显示进度提示
+          showMessage(`正在下载图片 ${current}/${total}`, 'success');
+
+          // 下载完成后清理 storage
+          if (current === total) {
+            setTimeout(() => {
+              browser.storage.local.remove('imageDownloadProgress');
+            }, 500);
+          }
+        }
+      }
+    });
+
     let isSelectionMode = false;
     let currentHighlight: HTMLElement | null = null;
     let originalOutline: string = '';

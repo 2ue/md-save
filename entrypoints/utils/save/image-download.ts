@@ -57,15 +57,18 @@ export class ImageDownloadService {
    *
    * @param tasks 图片任务列表
    * @param markdown 原始已替换的 Markdown
+   * @param onProgress 可选的进度回调 (当前完成数, 总数)
    * @returns { tasks: 更新后的任务, markdown: 修复后的 Markdown }
    */
   async download(
     tasks: ImageTask[],
-    markdown: string
+    markdown: string,
+    onProgress?: (current: number, total: number) => void
   ): Promise<{ tasks: ImageTask[]; markdown: string }> {
     console.log('[ImageDownloadService] Starting download for', tasks.length, 'images');
 
     // 并行下载所有图片
+    let completedCount = 0;
     const downloadedTasks = await Promise.all(
       tasks.map(async (task) => {
         try {
@@ -85,6 +88,10 @@ export class ImageDownloadService {
           task.status = 'failed';
           task.error = error instanceof Error ? error.message : String(error);
           console.warn('[ImageDownloadService] Failed to download:', task.originalUrl, error);
+        } finally {
+          // 每完成一张图片，更新进度
+          completedCount++;
+          onProgress?.(completedCount, tasks.length);
         }
         return task;
       })

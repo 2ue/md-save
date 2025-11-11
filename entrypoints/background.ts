@@ -193,7 +193,15 @@ export default defineBackground(() => {
             // 下载图片，失败的自动回退到原 URL
             const downloadResult = await imageDownloadService.download(
               context.images,
-              context.markdown
+              context.markdown,
+              // 进度回调：写入 storage 供 Content Script 监听
+              (current, total) => {
+                browser.storage.local.set({
+                  imageDownloadProgress: { current, total }
+                }).catch(err => {
+                  console.error('[Background] Failed to update progress:', err);
+                });
+              }
             );
 
             console.log('[Background] 图片下载完成');
