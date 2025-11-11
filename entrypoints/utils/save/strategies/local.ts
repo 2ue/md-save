@@ -73,13 +73,9 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
 
       const downloadOptions: any = {
         url: dataUrl,
-        filename: safePath
+        filename: safePath,
+        saveAs: false  // 静默下载，不弹窗
       };
-
-      // 如果没有自定义路径，显示另存为对话框
-      if (!downloadPath) {
-        downloadOptions.saveAs = true;
-      }
 
       const downloadId = await browser.downloads.download(downloadOptions);
 
@@ -120,13 +116,9 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
 
       const mdDownloadOptions: any = {
         url: mdDataUrl,
-        filename: mdSafePath
+        filename: mdSafePath,
+        saveAs: false  // 静默下载，不弹窗
       };
-
-      // 如果没有自定义路径，显示另存为对话框（只对主文件）
-      if (!downloadPath) {
-        mdDownloadOptions.saveAs = true;
-      }
 
       const mdDownloadId = await browser.downloads.download(mdDownloadOptions);
       console.log('[LocalSaveStrategyImpl] Markdown download started, ID:', mdDownloadId);

@@ -89,14 +89,26 @@ export class SaveStrategyManager {
           data: { context, strategy: strategyName }
         },
         (response) => {
-          if (!response) {
+          // 🔧 检查运行时错误（连接失败等）
+          if (browser.runtime.lastError) {
+            console.error('[SaveStrategyManager] sendMessage error:', browser.runtime.lastError.message);
             resolve({
               success: false,
-              error: 'No response from background script',
+              error: `通信失败: ${browser.runtime.lastError.message}`,
               errorCode: 'UNKNOWN'
             });
             return;
           }
+
+          if (!response) {
+            resolve({
+              success: false,
+              error: 'Background Script 无响应',
+              errorCode: 'UNKNOWN'
+            });
+            return;
+          }
+
           resolve(response);
         }
       );

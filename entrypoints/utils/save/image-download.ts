@@ -27,10 +27,13 @@ export class ImageDownloadService {
 
     console.log('[ImageDownloadService] Filename directory:', filenameDir || '(root)');
 
-    // 3. 生成映射表（包含 WebDAV 完整路径）
+    // 3. 生成文档标识符（使用filename的简单哈希）
+    const docId = this.simpleHash(filename);
+
+    // 4. 生成映射表（使用 docId_index 避免多文档共享assets时文件名冲突）
     const tasks: ImageTask[] = urls.map((url, index) => {
       const ext = this.getExtension(url) || 'png';
-      const imgFilename = `img_${index}.${ext}`;
+      const imgFilename = `img_${docId}_${index}.${ext}`;
 
       return {
         originalUrl: url,
@@ -157,5 +160,24 @@ export class ImageDownloadService {
    */
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * 生成字符串的简单哈希值（用于文档标识）
+   *
+   * 使用djb2算法生成32位哈希，返回8位十六进制字符串
+   * 这是一个快速、确定性的哈希函数，适合文件名去重场景
+   *
+   * @param str 输入字符串
+   * @returns 8位十六进制哈希字符串
+   */
+  private simpleHash(str: string): string {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(i); // hash * 33 + c
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    // Convert to unsigned 32bit integer and then to hex
+    return (hash >>> 0).toString(16).padStart(8, '0');
   }
 }

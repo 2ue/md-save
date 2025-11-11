@@ -165,20 +165,38 @@ export default defineBackground(() => {
         try {
           const { context, strategy } = message.data as { context: SaveContext; strategy: string };
 
+          // 🔧 获取发送消息的 tab ID（不依赖 sender.tab，更可靠）
+          let tabId = sender.tab?.id;
+
+          // 如果 sender.tab 不可用，查询当前活动的 tab
+          if (!tabId) {
+            const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true });
+            tabId = currentTab?.id;
+            console.log('[SaveStrategy] sender.tab 不可用，使用当前活动 tab:', tabId);
+          }
+
           console.log('[SaveStrategy] Received SAVE message:', {
             strategy,
             filename: context.filename,
             hasImages: !!context.images,
-            imageCount: context.images?.length || 0
+            imageCount: context.images?.length || 0,
+            tabId,
+            hasSenderTab: !!sender.tab
           });
 
           // 如果有图片任务，先在 Background Script 中下载
           // （Background Script 无 CORS 限制）
           if (context.images && context.images.length > 0) {
-            console.log('[SaveStrategy] Downloading images in background...');
+            console.log('[Background] ✅ 检测到图片任务，数量:', context.images.length);
+            console.log('[Background] 开始下载图片...');
 
             // 下载图片，失败的自动回退到原 URL
-            const downloadResult = await imageDownloadService.download(context.images, context.markdown);
+            const downloadResult = await imageDownloadService.download(
+              context.images,
+              context.markdown
+            );
+
+            console.log('[Background] 图片下载完成');
             context.images = downloadResult.tasks;
             context.markdown = downloadResult.markdown;  // 更新 Markdown（失败图片已回退）
 
