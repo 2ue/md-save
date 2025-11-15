@@ -466,7 +466,7 @@ async function importConfigFromFile() {
               ]"
             >
               <HardDrive class="w-5 h-5" />
-              <span class="text-base">存储</span>
+              <span class="text-base">保存与同步</span>
             </button>
 
             <button
@@ -492,14 +492,14 @@ async function importConfigFromFile() {
               ]"
             >
               <FolderSync class="w-5 h-5" />
-              <span class="text-base">配置同步</span>
+              <span class="text-base">备份</span>
             </button>
           </nav>
         </aside>
 
         <!-- 右侧内容区域 -->
         <main class="flex-1 min-w-0">
-          <!-- Tab 1: 存储 -->
+          <!-- Tab 1: 保存与同步 -->
           <div v-show="activeTab === 'storage'" class="space-y-6">
             <!-- 本地下载配置 -->
             <div class="bg-white rounded-xl p-6 shadow-sm">
@@ -733,19 +733,70 @@ async function importConfigFromFile() {
                     {{ webdavTestResult.message }}
                   </div>
                 </div>
+              </div>
+            </div>
 
-                <!-- 提示：配置同步 -->
-                <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p class="flex items-start gap-1.5 text-xs text-blue-800">
-                    <Lightbulb class="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <span><strong>提示：</strong>配置好 WebDAV 后，可以在
-                    <button
-                      @click="switchTab('sync')"
-                      class="underline hover:text-blue-900 font-medium"
-                    >
-                      配置同步
-                    </button>
-                    页面实现多设备配置同步</span>
+            <!-- WebDAV 配置同步 -->
+            <div class="bg-white rounded-xl p-6 shadow-sm">
+              <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-3">
+                <Cloud class="w-5 h-5" />
+                WebDAV 配置同步
+              </h2>
+
+              <p class="text-sm text-gray-600 mb-4">
+                将扩展的所有配置保存到 WebDAV，实现多设备配置同步
+              </p>
+
+              <!-- 提示：需要先配置WebDAV -->
+              <div v-if="!isWebDAVValid" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p class="flex items-start gap-1.5 text-xs text-yellow-800">
+                  <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <span><strong>提示：</strong>需要先配置上方的 WebDAV 服务器信息</span>
+                </p>
+              </div>
+
+              <div class="space-y-4">
+                <!-- 配置同步目录 -->
+                <div>
+                  <label class="block font-medium text-gray-700 mb-1.5">配置同步目录</label>
+                  <input
+                    type="text"
+                    v-model="config.configSyncDir"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
+                    placeholder="/md-save-settings/"
+                  />
+                  <div class="mt-1 text-xs text-gray-500">
+                    配置文件将保存为 config.json。例如：/md-save-settings/config.json
+                  </div>
+                </div>
+
+                <!-- 同步按钮 -->
+                <div class="flex gap-3">
+                  <button
+                    @click="uploadConfigToWebDAV"
+                    :disabled="!isConfigSyncValid || isUploadingConfig"
+                    class="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Upload class="w-4 h-4" />
+                    <span v-if="isUploadingConfig">上传中...</span>
+                    <span v-else>上传配置到 WebDAV（覆盖）</span>
+                  </button>
+
+                  <button
+                    @click="downloadConfigFromWebDAV"
+                    :disabled="!isConfigSyncValid || isDownloadingConfig"
+                    class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Download class="w-4 h-4" />
+                    <span v-if="isDownloadingConfig">下载中...</span>
+                    <span v-else>从 WebDAV 下载配置（覆盖）</span>
+                  </button>
+                </div>
+
+                <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                  <p class="flex items-start gap-1.5 text-xs text-yellow-800">
+                    <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <span><strong>重要提示：</strong>覆盖操作不可撤销，建议操作前手动备份配置。配置将包含所有设置（包括 WebDAV 密码）。</span>
                   </p>
                 </div>
               </div>
@@ -828,81 +879,8 @@ async function importConfigFromFile() {
             </div>
           </div>
 
-          <!-- Tab 3: 配置同步 -->
+          <!-- Tab 3: 备份 -->
           <div v-show="activeTab === 'sync'" class="space-y-6">
-            <!-- WebDAV 配置同步 -->
-            <div class="bg-white rounded-xl p-6 shadow-sm">
-              <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-3">
-                <Cloud class="w-5 h-5" />
-                WebDAV 配置同步
-              </h2>
-
-              <p class="text-sm text-gray-600 mb-4">
-                将扩展的所有配置保存到 WebDAV，实现多设备配置同步
-              </p>
-
-              <!-- 提示：需要先配置WebDAV -->
-              <div v-if="!isWebDAVValid" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p class="flex items-start gap-1.5 text-xs text-yellow-800">
-                  <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <span><strong>提示：</strong>需要先在
-                  <button
-                    @click="switchTab('storage')"
-                    class="underline hover:text-yellow-900 font-medium"
-                  >
-                    存储页面
-                  </button>
-                  配置 WebDAV 服务器信息</span>
-                </p>
-              </div>
-
-              <div class="space-y-4">
-                <!-- 配置同步目录 -->
-                <div>
-                  <label class="block font-medium text-gray-700 mb-1.5">配置同步目录</label>
-                  <input
-                    type="text"
-                    v-model="config.configSyncDir"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
-                    placeholder="/md-save-settings/"
-                  />
-                  <div class="mt-1 text-xs text-gray-500">
-                    配置文件将保存为 config.json。例如：/md-save-settings/config.json
-                  </div>
-                </div>
-
-                <!-- 同步按钮 -->
-                <div class="flex gap-3">
-                  <button
-                    @click="uploadConfigToWebDAV"
-                    :disabled="!isConfigSyncValid || isUploadingConfig"
-                    class="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Upload class="w-4 h-4" />
-                    <span v-if="isUploadingConfig">上传中...</span>
-                    <span v-else>上传配置到 WebDAV（覆盖）</span>
-                  </button>
-
-                  <button
-                    @click="downloadConfigFromWebDAV"
-                    :disabled="!isConfigSyncValid || isDownloadingConfig"
-                    class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Download class="w-4 h-4" />
-                    <span v-if="isDownloadingConfig">下载中...</span>
-                    <span v-else>从 WebDAV 下载配置（覆盖）</span>
-                  </button>
-                </div>
-
-                <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                  <p class="flex items-start gap-1.5 text-xs text-yellow-800">
-                    <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                    <span><strong>重要提示：</strong>覆盖操作不可撤销，建议操作前手动备份配置。配置将包含所有设置（包括 WebDAV 密码）。</span>
-                  </p>
-                </div>
-              </div>
-            </div>
-
             <!-- 本地备份与导入 -->
             <div class="bg-white rounded-xl p-6 shadow-sm">
               <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-3">
