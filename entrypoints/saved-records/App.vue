@@ -220,6 +220,13 @@ async function handleSync() {
       type: 'SYNC_HISTORY'
     });
 
+    // 防御性检查：background script 可能未响应
+    if (!result) {
+      syncMessage.value = '同步失败';
+      alert('同步失败: 无法连接到后台服务，请重新加载扩展');
+      return;
+    }
+
     if (result.success) {
       syncMessage.value = '同步成功';
       await loadHistory();  // 重新加载记录
