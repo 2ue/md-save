@@ -50,6 +50,42 @@ const imageDownloadEnabled = computed({
   }
 });
 
+// 历史同步开关的计算属性
+const historySyncEnabled = computed({
+  get: () => config.historySync?.enabled ?? false,
+  set: (value: boolean) => {
+    if (!config.historySync) {
+      config.historySync = { enabled: value, autoSyncOnStartup: true };
+    } else {
+      config.historySync.enabled = value;
+    }
+  }
+});
+
+// 启动时自动同步的计算属性
+const autoSyncOnStartup = computed({
+  get: () => config.historySync?.autoSyncOnStartup ?? true,
+  set: (value: boolean) => {
+    if (!config.historySync) {
+      config.historySync = { enabled: false, autoSyncOnStartup: value };
+    } else {
+      config.historySync.autoSyncOnStartup = value;
+    }
+  }
+});
+
+// 历史同步目录的计算属性
+const historySyncDir = computed({
+  get: () => config.historySync?.syncDir ?? '',
+  set: (value: string) => {
+    if (!config.historySync) {
+      config.historySync = { enabled: false, syncDir: value };
+    } else {
+      config.historySync.syncDir = value;
+    }
+  }
+});
+
 // 推断默认下载目录（基于操作系统）
 const inferredDownloadDir = computed(() => {
   const userAgent = navigator.userAgent.toLowerCase();
@@ -798,6 +834,80 @@ async function importConfigFromFile() {
                     <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
                     <span><strong>重要提示：</strong>覆盖操作不可撤销，建议操作前手动备份配置。配置将包含所有设置（包括 WebDAV 密码）。</span>
                   </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 历史记录同步 -->
+            <div class="bg-white rounded-xl p-6 shadow-sm">
+              <h2 class="flex items-center gap-2 text-xl font-semibold text-gray-900 mb-3">
+                <FolderSync class="w-5 h-5" />
+                历史记录同步
+              </h2>
+
+              <p class="text-sm text-gray-600 mb-4">
+                自动同步保存历史记录到 WebDAV，实现多设备间的历史记录共享
+              </p>
+
+              <!-- 提示：需要先配置WebDAV -->
+              <div v-if="!isWebDAVValid" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p class="flex items-start gap-1.5 text-xs text-yellow-800">
+                  <AlertTriangle class="w-3.5 h-3.5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <span><strong>提示：</strong>需要先配置上方的 WebDAV 服务器信息</span>
+                </p>
+              </div>
+
+              <div class="space-y-4">
+                <!-- 启用开关 -->
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                  <div class="flex-1">
+                    <label class="block font-medium text-gray-700 mb-0.5">启用历史记录同步</label>
+                    <p class="text-xs text-gray-500">保存文章时自动上传历史记录到 WebDAV</p>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      v-model="historySyncEnabled"
+                      :disabled="!isWebDAVValid"
+                      class="sr-only peer"
+                    />
+                    <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-3 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                  </label>
+                </div>
+
+                <!-- 同步选项（仅在启用时显示） -->
+                <div v-if="historySyncEnabled" class="ml-6 space-y-3">
+                  <!-- 自动同步 -->
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      v-model="autoSyncOnStartup"
+                      class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                    />
+                    <span class="text-sm text-gray-700">扩展启动时自动同步历史记录</span>
+                  </label>
+
+                  <!-- 同步目录 -->
+                  <div>
+                    <label class="block font-medium text-gray-700 mb-1.5">历史同步目录（可选）</label>
+                    <input
+                      type="text"
+                      v-model="historySyncDir"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10 transition-all"
+                      placeholder="留空使用配置同步目录"
+                    />
+                    <div class="mt-1 text-xs text-gray-500">
+                      历史记录将保存为 history.json。留空则使用：{{ config.configSyncDir || '/md-save-settings/' }}
+                    </div>
+                  </div>
+
+                  <!-- 说明 -->
+                  <div class="bg-blue-50 border border-blue-200 rounded-md p-3">
+                    <p class="flex items-start gap-1.5 text-xs text-blue-800">
+                      <Lightbulb class="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <span><strong>工作原理：</strong>每次保存文章时，历史记录会自动同步到 WebDAV。扩展启动时会自动下载并合并云端历史，保证所有设备看到相同的历史记录。</span>
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

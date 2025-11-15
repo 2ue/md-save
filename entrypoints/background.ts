@@ -13,6 +13,7 @@ import {
   type SaveResult,
   type SaveStrategy
 } from './utils/save';
+import { historySyncService } from '@/utils/history-sync';
 
 const HISTORY_STORAGE_KEY = 'saveHistory';
 const MAX_HISTORY_RECORDS = 1000;
@@ -28,6 +29,8 @@ export default defineBackground(() => {
 
   // 初始化图片下载服务
   const imageDownloadService = new ImageDownloadService();
+
+  // 历史同步服务已改为无状态设计，无需初始化
 
   // 初始化：检查并应用环境变量配置到 storage（仅在 storage 为空时）
   (async () => {
@@ -138,6 +141,14 @@ export default defineBackground(() => {
 
       await browser.storage.local.set({ [HISTORY_STORAGE_KEY]: history });
       console.log('History record added:', newRecord);
+
+      // 保存时同步到云端（异步，不阻塞）
+      const { extensionConfig } = await browser.storage.local.get('extensionConfig');
+      if (extensionConfig?.historySync?.enabled) {
+        historySyncService.appendRecord(newRecord).catch(err =>
+          console.error('[HistorySync] Auto sync after save failed:', err)
+        );
+      }
     } catch (error) {
       console.error('Failed to add history record:', error);
     }
@@ -439,6 +450,40 @@ export default defineBackground(() => {
       })();
 
       return true; // 保持消息通道开放
+    }
+
+    // 手动同步历史记录
+    if (message.type === 'SYNC_HISTORY') {
+      (async () => {
+        try {
+          const result = await historySyncService.sync();
+          sendResponse(result);
+        } catch (error: any) {
+          sendResponse({
+            success: false,
+            error: error?.message || 'Sync failed'
+          });
+        }
+      })();
+
+      return true; // 保持消息通道开放
+    }
+  });
+
+  // 启动时自动同步
+  browser.runtime.onStartup.addListener(async () => {
+    try {
+      const { extensionConfig } = await browser.storage.local.get('extensionConfig');
+
+      if (extensionConfig?.historySync?.enabled &&
+          extensionConfig?.historySync?.autoSyncOnStartup !== false) {
+        console.log('[HistorySync] Auto sync on startup...');
+        historySyncService.sync().catch(err =>
+          console.error('[HistorySync] Auto sync on startup failed:', err)
+        );
+      }
+    } catch (error) {
+      console.error('[HistorySync] Startup check failed:', error);
     }
   });
 });

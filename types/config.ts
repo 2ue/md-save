@@ -20,6 +20,13 @@ export interface ExtensionConfig {
   imageDownload?: {
     enabled: boolean;              // 是否启用图片下载，默认 false
   };
+
+  // 历史记录同步配置（可选，向后兼容）
+  historySync?: {
+    enabled: boolean;              // 是否启用历史记录同步，默认 false
+    autoSyncOnStartup?: boolean;   // 启动时自动同步，默认 true
+    syncDir?: string;              // 同步目录，默认使用 configSyncDir
+  };
 }
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
@@ -60,5 +67,9 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   },
   imageDownload: {
     enabled: false  // 默认禁用，保持向后兼容
+  },
+  historySync: {
+    enabled: false,          // 默认禁用，保持向后兼容
+    autoSyncOnStartup: true  // 启用后默认自动同步
   }
 };

@@ -2,7 +2,7 @@
   "name": "web-save",
   "description": "一个简易的网页保存工具",
   "private": true,
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "scripts": {
     "dev": "wxt",

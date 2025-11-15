@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted, computed } from 'vue';
-import { Search, Trash2, ExternalLink, Calendar, Globe, Download, AlertCircle, CheckCircle, Clock, Filter } from 'lucide-vue-next';
+import { Search, Trash2, ExternalLink, Calendar, Globe, Download, AlertCircle, CheckCircle, Clock, Filter, RefreshCw } from 'lucide-vue-next';
 import type { HistoryRecord } from '../../types';
 
 interface HistoryFilters {
@@ -13,18 +13,27 @@ const records = ref<HistoryRecord[]>([]);
 const selectedIds = ref<Set<string>>(new Set());
 const isLoading = ref(true);
 const isDeleting = ref(false);
+const isSyncing = ref(false);
+const syncMessage = ref('');
+const currentPage = ref(1);
+const pageSize = 50;
 const filters = reactive<HistoryFilters>({
   search: '',
   saveLocation: 'all',
   dateRange: 'all'
 });
 
+// 按时间排序：最新的在前
+const sortedRecords = computed(() => {
+  return [...records.value].sort((a, b) => b.timestamp - a.timestamp);
+});
+
 const filteredRecords = computed(() => {
-  return records.value.filter(record => {
+  return sortedRecords.value.filter(record => {
     // Search filter
     if (filters.search) {
       const searchTerm = filters.search.toLowerCase();
-      const matchesSearch = 
+      const matchesSearch =
         record.title.toLowerCase().includes(searchTerm) ||
         record.url.toLowerCase().includes(searchTerm) ||
         record.domain.toLowerCase().includes(searchTerm);
@@ -41,7 +50,7 @@ const filteredRecords = computed(() => {
       const now = Date.now();
       const recordDate = record.timestamp;
       const dayMs = 24 * 60 * 60 * 1000;
-      
+
       switch (filters.dateRange) {
         case 'today':
           if (now - recordDate > dayMs) return false;
@@ -59,6 +68,17 @@ const filteredRecords = computed(() => {
   });
 });
 
+// 当前页记录
+const currentPageRecords = computed(() => {
+  const start = (currentPage.value - 1) * pageSize;
+  return filteredRecords.value.slice(start, start + pageSize);
+});
+
+// 总页数
+const totalPages = computed(() => {
+  return Math.ceil(filteredRecords.value.length / pageSize);
+});
+
 const statistics = computed(() => {
   return {
     total: records.value.length,
@@ -68,10 +88,17 @@ const statistics = computed(() => {
 });
 
 const hasSelection = computed(() => selectedIds.value.size > 0);
-const isAllSelected = computed(() => 
-  filteredRecords.value.length > 0 && 
-  filteredRecords.value.every(record => selectedIds.value.has(record.id))
+const isAllSelected = computed(() =>
+  currentPageRecords.value.length > 0 &&
+  currentPageRecords.value.every(record => selectedIds.value.has(record.id))
 );
+
+// 同步按钮文本
+const syncButtonText = computed(() => {
+  if (isSyncing.value) return '同步中...';
+  if (syncMessage.value) return syncMessage.value;
+  return '同步';
+});
 
 onMounted(async () => {
   await loadHistory();
@@ -182,6 +209,35 @@ function clearFilters() {
   filters.saveLocation = 'all';
   filters.dateRange = 'all';
 }
+
+// 手动同步历史记录
+async function handleSync() {
+  isSyncing.value = true;
+  syncMessage.value = '';
+
+  try {
+    const result = await browser.runtime.sendMessage({
+      type: 'SYNC_HISTORY'
+    });
+
+    if (result.success) {
+      syncMessage.value = '同步成功';
+      await loadHistory();  // 重新加载记录
+    } else {
+      syncMessage.value = '同步失败';
+      alert(`同步失败: ${result.error || '未知错误'}`);
+    }
+  } catch (error) {
+    syncMessage.value = '同步失败';
+    console.error('Sync error:', error);
+    alert(`同步失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  } finally {
+    isSyncing.value = false;
+    setTimeout(() => {
+      syncMessage.value = '';
+    }, 3000);
+  }
+}
 </script>
 
 <template>
@@ -198,20 +254,33 @@ function clearFilters() {
             </div>
           </div>
           
-          <!-- Statistics -->
-          <div class="flex items-center gap-6 text-sm">
-            <div class="flex items-center gap-1">
-              <span class="text-gray-600">总计:</span>
-              <span class="font-semibold">{{ statistics.total }}</span>
+          <!-- Statistics and Sync Button -->
+          <div class="flex items-center gap-6">
+            <div class="flex items-center gap-6 text-sm">
+              <div class="flex items-center gap-1">
+                <span class="text-gray-600">总计:</span>
+                <span class="font-semibold">{{ statistics.total }}</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <Download class="w-4 h-4 text-blue-600" />
+                <span class="text-blue-600">本地: {{ statistics.local }}</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <Globe class="w-4 h-4 text-green-600" />
+                <span class="text-green-600">WebDAV: {{ statistics.webdav }}</span>
+              </div>
             </div>
-            <div class="flex items-center gap-1">
-              <Download class="w-4 h-4 text-blue-600" />
-              <span class="text-blue-600">本地: {{ statistics.local }}</span>
-            </div>
-            <div class="flex items-center gap-1">
-              <Globe class="w-4 h-4 text-green-600" />
-              <span class="text-green-600">WebDAV: {{ statistics.webdav }}</span>
-            </div>
+
+            <!-- 同步按钮 -->
+            <button
+              @click="handleSync"
+              :disabled="isSyncing"
+              class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              :class="{ 'bg-green-600 hover:bg-green-700': syncMessage === '同步成功' }"
+            >
+              <RefreshCw :class="{ 'animate-spin': isSyncing }" class="w-4 h-4" />
+              {{ syncButtonText }}
+            </button>
           </div>
         </div>
       </div>
@@ -342,8 +411,8 @@ function clearFilters() {
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200">
-              <tr 
-                v-for="record in filteredRecords" 
+              <tr
+                v-for="record in currentPageRecords"
                 :key="record.id"
                 class="hover:bg-gray-50 transition-colors"
                 :class="{ 'bg-blue-50': selectedIds.has(record.id) }"
@@ -359,8 +428,8 @@ function clearFilters() {
                 <!-- 标题 -->
                 <td class="px-4 py-3">
                   <div class="max-w-96">
-                    <div class="font-medium text-gray-900 truncate">{{ record.title }}</div>
-                    <div class="text-xs text-gray-500 truncate mt-1">{{ record.contentPreview }}</div>
+                    <div class="font-medium text-gray-900 truncate" :title="record.title">{{ record.title }}</div>
+                    <div class="text-xs text-gray-500 truncate mt-1" :title="record.contentPreview">{{ record.contentPreview }}</div>
                   </div>
                 </td>
                 <!-- 网址 (可点击) -->
@@ -413,6 +482,68 @@ function clearFilters() {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- 分页控件 -->
+        <div v-if="totalPages > 1" class="px-4 py-3 border-t border-gray-200 bg-gray-50">
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-gray-600">
+              显示第 {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredRecords.length) }} 条，
+              共 {{ filteredRecords.length }} 条记录
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                @click="currentPage--"
+                :disabled="currentPage === 1"
+                class="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                上一页
+              </button>
+
+              <div class="flex items-center gap-1">
+                <!-- 显示页码 -->
+                <template v-for="page in Math.min(totalPages, 7)" :key="page">
+                  <button
+                    v-if="
+                      page === 1 ||
+                      page === totalPages ||
+                      Math.abs(page - currentPage) <= 1
+                    "
+                    @click="currentPage = page"
+                    :class="[
+                      'px-3 py-1 text-sm border rounded-md transition-colors',
+                      page === currentPage
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'border-gray-300 hover:bg-white'
+                    ]"
+                  >
+                    {{ page }}
+                  </button>
+                  <span
+                    v-else-if="page === 2 && currentPage > 3"
+                    class="px-2 text-gray-500"
+                  >
+                    ...
+                  </span>
+                  <span
+                    v-else-if="page === totalPages - 1 && currentPage < totalPages - 2"
+                    class="px-2 text-gray-500"
+                  >
+                    ...
+                  </span>
+                </template>
+              </div>
+
+              <button
+                @click="currentPage++"
+                :disabled="currentPage === totalPages"
+                class="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
