@@ -41,6 +41,21 @@ export interface TemplateData {
 }
 
 /**
+ * Sanitize title to prevent path injection and invalid filename characters
+ *
+ * Removes characters that could be confused with directory separators or
+ * cause filesystem issues when used in filenames.
+ */
+function sanitizeTitle(title: string): string {
+  return title
+    .replace(/[\/\\]/g, '-')         // Replace path separators (/ and \) with dash
+    .replace(/[<>:"|?*]/g, '-')      // Replace invalid filename characters with dash
+    .replace(/\s+/g, ' ')            // Normalize multiple spaces to single space
+    .replace(/-+/g, '-')             // Replace multiple dashes with single dash
+    .trim();
+}
+
+/**
  * Generate template data from extracted content
  */
 export function generateTemplateData(extractedContent: {
@@ -54,9 +69,14 @@ export function generateTemplateData(extractedContent: {
   const url = new URL(extractedContent.url);
   const dayjsObj = dayjs(extractedContent.timestamp);
 
+  // Sanitize title at data source to prevent path injection
+  const cleanTitle = sanitizeTitle(extractedContent.title || 'Untitled');
+  console.log('[Template] Original title:', extractedContent.title);
+  console.log('[Template] Sanitized title:', cleanTitle);
+
   const result: TemplateData = {
     // 基础字段
-    title: extractedContent.title || 'Untitled',
+    title: cleanTitle,
     url: extractedContent.url,
     domain: url.hostname,
     content: extractedContent.markdown,

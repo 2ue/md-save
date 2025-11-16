@@ -259,6 +259,14 @@ export default defineContentScript({
             transition: all 0.2s;
             outline: none;
           " onfocus="this.style.borderColor='#2563eb'; this.style.boxShadow='0 0 0 3px rgba(37, 99, 235, 0.1)'" onblur="this.style.borderColor='#d1d5db'; this.style.boxShadow='none'">
+          <!-- 完整保存路径预览 -->
+          <div id="full-path-preview" style="
+            margin-top: 6px;
+            font-size: 12px;
+            color: #6b7280;
+            font-family: 'Courier New', 'Consolas', monospace;
+            word-break: break-all;
+          "></div>
           <div id="filename-error" style="
             margin-top: 6px;
             font-size: 12px;
@@ -333,6 +341,16 @@ export default defineContentScript({
       const cancelBtn = modalContent.querySelector('#cancel-save');
       const filenameInput = modalContent.querySelector('#filename-input') as HTMLInputElement;
       const filenameError = modalContent.querySelector('#filename-error') as HTMLDivElement;
+      const fullPathPreview = modalContent.querySelector('#full-path-preview') as HTMLDivElement;
+
+      // 更新完整文件名预览的函数
+      const updateFullPathPreview = () => {
+        const currentBasename = filenameInput.value.trim() || basename;
+        const fullPath = filenameDirectory
+          ? `${filenameDirectory}/${currentBasename}.md`
+          : `${currentBasename}.md`;
+        fullPathPreview.textContent = `完整文件名: ${fullPath}`;
+      };
 
       // 清除文件名错误的函数
       const clearFilenameError = () => {
@@ -349,8 +367,14 @@ export default defineContentScript({
         filenameError.style.display = 'block';
       };
 
-      // 输入时清除错误
-      filenameInput.addEventListener('input', clearFilenameError);
+      // 初始化完整路径预览
+      updateFullPathPreview();
+
+      // 输入时更新完整路径预览并清除错误
+      filenameInput.addEventListener('input', () => {
+        updateFullPathPreview();
+        clearFilenameError();
+      });
 
       closeBtn?.addEventListener('click', () => closePreviewModal());
       cancelBtn?.addEventListener('click', () => closePreviewModal());
