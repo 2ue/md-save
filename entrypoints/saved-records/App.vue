@@ -101,16 +101,34 @@ const syncButtonText = computed(() => {
 });
 
 onMounted(async () => {
+  // 🔧 预激活 background script（访问 storage API 比发送消息更可靠）
+  try {
+    await browser.storage.local.get('extensionConfig');
+  } catch (error) {
+    console.warn('[History] Failed to pre-activate background:', error);
+  }
+
   await loadHistory();
 });
 
 async function loadHistory() {
   isLoading.value = true;
   try {
-    const response = await browser.runtime.sendMessage({
+    let response = await browser.runtime.sendMessage({
       type: 'GET_HISTORY',
       data: {}
     });
+
+    // 🔧 MV3 Service Worker 懒加载：首次可能未响应，自动重试
+    if (!response) {
+      console.log('[History] Background script 未响应，等待激活后重试...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      response = await browser.runtime.sendMessage({
+        type: 'GET_HISTORY',
+        data: {}
+      });
+    }
+
     records.value = response || [];
   } catch (error) {
     console.error('Failed to load history:', error);
@@ -216,15 +234,23 @@ async function handleSync() {
   syncMessage.value = '';
 
   try {
-    const result = await browser.runtime.sendMessage({
+    let result = await browser.runtime.sendMessage({
       type: 'SYNC_HISTORY'
     });
 
-    // 防御性检查：background script 可能未响应
+    // 🔧 MV3 Service Worker 懒加载：首次可能未响应，自动重试
     if (!result) {
-      syncMessage.value = '同步失败';
-      alert('同步失败: 无法连接到后台服务，请重新加载扩展');
-      return;
+      console.log('[HistorySync] Background script 未响应，等待激活后重试...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      result = await browser.runtime.sendMessage({
+        type: 'SYNC_HISTORY'
+      });
+
+      if (!result) {
+        syncMessage.value = '同步失败';
+        alert('同步失败: 无法连接到后台服务，请重新加载扩展');
+        return;
+      }
     }
 
     if (result.success) {

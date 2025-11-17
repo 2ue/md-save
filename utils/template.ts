@@ -43,15 +43,28 @@ export interface TemplateData {
 /**
  * Sanitize title to prevent path injection and invalid filename characters
  *
- * Removes characters that could be confused with directory separators or
- * cause filesystem issues when used in filenames.
+ * 策略：
+ * 1. 使用贪婪匹配将连续的特殊字符和空格一次性替换为单个 -
+ * 2. 压缩连续的 -（处理原文本中已有 - 的情况）
+ * 3. 去除首尾的 -
+ *
+ * 保留的字符：
+ * - 下划线 _（视为合法字符，不做任何处理）
+ * - 字母、数字、中文等常规字符
+ *
+ * 示例：
+ * "My: Article"       → "My-Article"
+ * "A:<>  B"          → "A-B"
+ * "File://path"      → "File-path"
+ * "A:-B"             → "A-B"（原有的 - 会被压缩）
+ * "My_Article"       → "My_Article"（下划线保留）
+ * "My__Test"         → "My__Test"（连续下划线也保留）
  */
 function sanitizeTitle(title: string): string {
   return title
-    .replace(/[\/\\]/g, '-')         // Replace path separators (/ and \) with dash
-    .replace(/[<>:"|?*]/g, '-')      // Replace invalid filename characters with dash
-    .replace(/\s+/g, ' ')            // Normalize multiple spaces to single space
-    .replace(/-+/g, '-')             // Replace multiple dashes with single dash
+    .replace(/[\/\\<>:"|?*\s]+/g, '-')  // 步骤1: 贪婪匹配所有特殊字符+空格 → 单个 -
+    .replace(/-+/g, '-')                 // 步骤2: 压缩连续的 - 为单个 -
+    .replace(/^-|-$/g, '')               // 步骤3: 去除首尾的 -（不处理下划线）
     .trim();
 }
 
@@ -158,6 +171,33 @@ export function replaceTemplateVariables(templateString: string, data: TemplateD
  * 1. 返回的文件名**不包含** .md 后缀
  * 2. 保留 '/' 以支持目录结构（例如 {{YYYY}}/{{MM}}/{{title}}）
  * 3. .md 后缀由保存策略（local.ts / webdav.ts）添加
+ *
+ * 清理策略（两步法）：
+ * - 步骤1: 使用贪婪匹配 [<>:"|?*\\\s]+ 将连续的特殊字符和空格替换为单个 -
+ * - 步骤2: 压缩连续的 -
+ * - 步骤3-6: 按路径段处理，去除每段首尾的 -，过滤空段
+ *
+ * 关键设计：
+ * - 保留 / 用于目录结构（不在替换字符集中）
+ * - 保留 _ 下划线（视为合法字符，像字母数字一样处理）
+ * - 保留模板中的其他合法字符（如用户自定义的 _notes 后缀）
+ * - 贪婪匹配确保 "A:<>B" → "A-B"（不会产生 "A---B"）
+ * - 压缩步骤处理 "A:-B" → "A-B"（原文本中的 - 被合并）
+ *
+ * 示例：
+ * "{{title}}"              + title="My: Article"   → "My-Article"
+ * "{{YYYY}}/{{title}}"     + title="A:<>  B"       → "2025/A-B"
+ * "{{title}}_{{date}}"     + title="My  Article"   → "My-Article_2025-01-10"
+ * "{{title}}_notes"        + title="my_test_file"  → "my_test_file_notes"
+ * ":{{title}}:"            + title="Test"          → "Test"（首尾特殊字符被去除）
+ *
+ * 下划线处理示例：
+ * - "My_Article"           → "My_Article"（保留）
+ * - "My__Article"          → "My__Article"（连续下划线也保留）
+ * - "My_Article: Notes"    → "My_Article-Notes"（下划线保留，冒号替换）
+ *
+ * 边界情况：
+ * - 标题包含 /（罕见）：如 "File://path" → "File/path"（/ 被保留为路径分隔符）
  */
 export function generateFilename(titleTemplate: string, data: TemplateData): string {
   console.log('[Template] generateFilename input - template:', titleTemplate, 'data:', JSON.stringify(data, null, 2));
@@ -165,12 +205,14 @@ export function generateFilename(titleTemplate: string, data: TemplateData): str
   const filename = replaceTemplateVariables(titleTemplate, data);
   console.log('[Template] generateFilename after template replacement:', filename);
 
-  // Clean up filename - remove invalid characters but preserve '/' for directory support
+  // Clean up filename - 统一使用 - 替换特殊字符和空格（保留 / 用于目录）
   const cleanFilename = filename
-    .replace(/[<>:"|?*\\]/g, '-')   // Replace invalid filename characters (preserve / for paths)
-    .replace(/\s+/g, '_')            // Replace spaces with underscores
-    .replace(/-+/g, '-')             // Replace multiple dashes with single dash
-    .replace(/_+/g, '_')             // Replace multiple underscores with single underscore
+    .replace(/[<>:"|?*\\\s]+/g, '-')  // 步骤1: 贪婪匹配特殊字符+空格 → -（保留 /）
+    .replace(/-+/g, '-')               // 步骤2: 压缩连续的 -
+    .split('/')                        // 步骤3: 分割路径段，分别处理
+    .map(segment => segment.replace(/^-|-$/g, ''))  // 步骤4: 去除每段首尾的 -
+    .filter(segment => segment)        // 步骤5: 去除空段
+    .join('/')                         // 步骤6: 重新组合
     .trim();
 
   console.log('[Template] generateFilename final result (without .md):', cleanFilename);
