@@ -104,12 +104,7 @@ export class ImageDownloadService {
     if (failedTasks.length > 0) {
       console.log('[ImageDownloadService] Reverting', failedTasks.length, 'failed images to original URLs');
 
-      failedTasks.forEach(task => {
-        // 将本地路径替换回原始 URL
-        const escapedLocalPath = this.escapeRegex(task.localPath);
-        const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedLocalPath}\\)`, 'g');
-        fixedMarkdown = fixedMarkdown.replace(regex, `![$1](${task.originalUrl})`);
-      });
+      fixedMarkdown = this.revertFailedTasks(fixedMarkdown, failedTasks);
     }
 
     return { tasks: downloadedTasks, markdown: fixedMarkdown };
@@ -119,8 +114,8 @@ export class ImageDownloadService {
    * 提取 Markdown 中的图片 URL
    */
   private extractImageUrls(markdown: string): string[] {
-    // 匹配 ![alt](url) 格式
-    const regex = /!\[.*?\]\((https?:\/\/[^\)]+)\)/g;
+    // 匹配 ![alt](url) 格式，url 可为任意 scheme（http/https/blob/data 等）
+    const regex = /!\[.*?\]\(([^)]+)\)/g;
     const urls: string[] = [];
     let match;
 
@@ -167,6 +162,25 @@ export class ImageDownloadService {
    */
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * 将给定任务对应的本地路径在 Markdown 中回退为原始 URL
+   *
+   * 用于两种场景：
+   * - 图片下载失败（download 阶段）
+   * - 图片上传/保存失败（各保存策略内部）
+   */
+  revertFailedTasks(markdown: string, tasks: ImageTask[]): string {
+    let fixed = markdown;
+
+    tasks.forEach(task => {
+      const escapedLocalPath = this.escapeRegex(task.localPath);
+      const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedLocalPath}\\)`, 'g');
+      fixed = fixed.replace(regex, `![$1](${task.originalUrl})`);
+    });
+
+    return fixed;
   }
 
   /**

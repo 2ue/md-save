@@ -110,9 +110,8 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
 
       // 1. 下载 Markdown 文件
       const mdDataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(context.markdown)}`;
-      const mdSafePath = downloadPath
-        ? `${downloadPath}/${context.filename}.md`
-        : `${context.filename}.md`;
+      const basePath = downloadPath ? `${downloadPath}/` : '';
+      const mdSafePath = `${basePath}${context.filename}.md`;
 
       const mdDownloadOptions: any = {
         url: mdDataUrl,
@@ -123,22 +122,14 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
       const mdDownloadId = await browser.downloads.download(mdDownloadOptions);
       console.log('[LocalSaveStrategyImpl] Markdown download started, ID:', mdDownloadId);
 
-      // 2. 计算图片下载的基础路径
-      let imageBasePath = '';
-      if (!downloadPath) {
-        // 等待主文件下载完成，获取用户选择的路径
-        imageBasePath = await this.waitForDownloadPath(mdDownloadId, context.filename);
-      } else {
-        // 使用配置的路径
-        imageBasePath = downloadPath;
-      }
-
-      // 3. 提取 filename 中的目录部分（与 Markdown 文件同级）
+      // 2. 计算图片保存路径前缀（与 Markdown 同级目录下的 assets/）
       const filenameDir = context.filename.includes('/')
         ? context.filename.substring(0, context.filename.lastIndexOf('/') + 1)
         : '';
+      const assetsDir = this.getAssetsDir(context);
+      const imageBasePrefix = `${basePath}${filenameDir}${assetsDir}/`;
 
-      // 4. 并行下载所有图片到 assets/ 子目录
+      // 3. 并行下载所有图片到 assets/ 子目录
       const { successCount, failedCount } = this.getImageStats(context);
       const imageDownloadIds: number[] = [];
 
@@ -149,7 +140,7 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
           .filter(task => task.status === 'success' && task.blob)
           .map(async (task) => {
             // 图片保存到与 Markdown 同级的 assets/ 目录
-            const imagePath = `${imageBasePath}/${filenameDir}assets/${task.filename}`;
+            const imagePath = `${imageBasePrefix}${task.filename}`;
             const imageUrl = URL.createObjectURL(task.blob!); // 已通过 filter 检查
 
             return browser.downloads.download({
@@ -197,49 +188,6 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
         'UNKNOWN'
       );
     }
-  }
-
-  /**
-   * 等待下载完成并获取实际路径
-   */
-  private async waitForDownloadPath(downloadId: number, filename: string): Promise<string> {
-    return new Promise((resolve) => {
-      const checkDownload = async () => {
-        try {
-          const downloads = await browser.downloads.search({
-            id: downloadId,
-            limit: 1
-          });
-
-          if (downloads.length > 0) {
-            const download = downloads[0];
-
-            if (download.state === 'complete') {
-              // 获取下载完成的实际路径
-              if (download.filename) {
-                const fullPath = download.filename;
-                // 移除文件名，返回目录路径
-                const dirPath = fullPath.replace(`/${filename}.md`, '');
-                console.log('[LocalSaveStrategyImpl] Download directory detected:', dirPath);
-                resolve(dirPath);
-                return;
-              }
-            } else if (download.state === 'interrupted') {
-              console.warn('[LocalSaveStrategyImpl] Download interrupted, using default path');
-              resolve(''); // 使用默认路径
-              return;
-            }
-          }
-        } catch (error) {
-          console.error('[LocalSaveStrategyImpl] Error checking download:', error);
-        }
-
-        // 继续等待
-        setTimeout(checkDownload, 100);
-      };
-
-      checkDownload();
-    });
   }
 
   /**

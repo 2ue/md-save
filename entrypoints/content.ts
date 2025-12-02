@@ -21,23 +21,239 @@ export default defineContentScript({
     // 初始化图片下载服务
     const imageDownloadService = new ImageDownloadService();
 
-    // 监听图片下载进度（Background Script 通过 storage 传递进度）
+    // 图片下载队列弹窗元素
+    let imageQueueModal: HTMLElement | null = null;
+    let imageQueueHeader: HTMLElement | null = null;
+    let imageQueueList: HTMLElement | null = null;
+
+    // 创建或获取图片下载队列弹窗
+    function ensureImageQueueModal(): void {
+      if (imageQueueModal && document.body.contains(imageQueueModal)) {
+        return;
+      }
+
+      const modal = document.createElement('div');
+      modal.id = 'md-save-image-queue';
+      modal.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 360px;
+        max-height: 50vh;
+        background: #111827;
+        color: #e5e7eb;
+        border-radius: 12px;
+        box-shadow: 0 20px 25px rgba(0, 0, 0, 0.3);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        z-index: 1000000;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      `;
+
+      const header = document.createElement('div');
+      header.style.cssText = `
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(55, 65, 81, 0.9);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 13px;
+      `;
+
+      const title = document.createElement('div');
+      title.textContent = '图片下载队列';
+      title.style.fontWeight = '600';
+
+      const summary = document.createElement('div');
+      summary.style.cssText = `
+        flex: 1;
+        text-align: right;
+        font-size: 12px;
+        color: #9ca3af;
+        margin-right: 8px;
+      `;
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '×';
+      closeBtn.style.cssText = `
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+      `;
+      closeBtn.onmouseover = () => {
+        closeBtn.style.backgroundColor = '#374151';
+        closeBtn.style.color = '#e5e7eb';
+      };
+      closeBtn.onmouseout = () => {
+        closeBtn.style.backgroundColor = 'transparent';
+        closeBtn.style.color = '#9ca3af';
+      };
+      closeBtn.onclick = () => {
+        modal.remove();
+        imageQueueModal = null;
+        imageQueueHeader = null;
+        imageQueueList = null;
+      };
+
+      header.appendChild(title);
+      header.appendChild(summary);
+      header.appendChild(closeBtn);
+
+      const list = document.createElement('div');
+      list.style.cssText = `
+        padding: 8px 12px 10px;
+        overflow-y: auto;
+        font-size: 12px;
+      `;
+
+      modal.appendChild(header);
+      modal.appendChild(list);
+      document.body.appendChild(modal);
+
+      imageQueueModal = modal;
+      imageQueueHeader = summary;
+      imageQueueList = list;
+    }
+
+    type ImageQueueItem = {
+      originalUrl: string;
+      localPath: string;
+      status: 'pending' | 'downloading' | 'success' | 'failed';
+      error?: string;
+    };
+
+    function renderImageQueue(data: {
+      tasks: ImageQueueItem[];
+      total: number;
+      completed: number;
+      phase: 'start' | 'end';
+    }): void {
+      if (!data || !data.tasks || data.tasks.length === 0) return;
+
+      ensureImageQueueModal();
+      if (!imageQueueModal || !imageQueueHeader || !imageQueueList) return;
+
+      const { tasks, total, completed, phase } = data;
+
+      const successCount = tasks.filter(t => t.status === 'success').length;
+      const failedCount = tasks.filter(t => t.status === 'failed').length;
+
+      // 更新头部 summary
+      if (phase === 'start') {
+        imageQueueHeader.textContent = `准备下载图片 ${total} 张`;
+      } else {
+        imageQueueHeader.textContent = `下载完成：成功 ${successCount} 张，失败 ${failedCount} 张`;
+      }
+
+      // 渲染列表（最多显示前 50 条）
+      imageQueueList.innerHTML = '';
+      const maxItems = 50;
+      const displayTasks = tasks.slice(0, maxItems);
+
+      displayTasks.forEach((task) => {
+        const row = document.createElement('div');
+        row.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 0;
+        `;
+
+        const statusBadge = document.createElement('span');
+        statusBadge.style.cssText = `
+          flex-shrink: 0;
+          min-width: 46px;
+          padding: 2px 6px;
+          border-radius: 999px;
+          font-size: 11px;
+          text-align: center;
+        `;
+
+        let statusText = '';
+        switch (task.status) {
+          case 'pending':
+            statusText = '等待';
+            statusBadge.style.backgroundColor = '#374151';
+            statusBadge.style.color = '#e5e7eb';
+            break;
+          case 'downloading':
+            statusText = '下载中';
+            statusBadge.style.backgroundColor = '#1d4ed8';
+            statusBadge.style.color = '#e5e7eb';
+            break;
+          case 'success':
+            statusText = '成功';
+            statusBadge.style.backgroundColor = '#16a34a';
+            statusBadge.style.color = '#ecfdf3';
+            break;
+          case 'failed':
+            statusText = '失败';
+            statusBadge.style.backgroundColor = '#b91c1c';
+            statusBadge.style.color = '#fee2e2';
+            break;
+        }
+        statusBadge.textContent = statusText;
+
+        const urlText = document.createElement('div');
+        urlText.style.cssText = `
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: #d1d5db;
+        `;
+        urlText.title = task.originalUrl;
+        urlText.textContent = task.originalUrl;
+
+        row.appendChild(statusBadge);
+        row.appendChild(urlText);
+
+        // 如果失败，显示一行简短错误
+        if (task.status === 'failed' && task.error) {
+          const errorRow = document.createElement('div');
+          errorRow.style.cssText = `
+            margin-left: 52px;
+            font-size: 11px;
+            color: #fca5a5;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          `;
+          errorRow.textContent = task.error;
+          row.appendChild(errorRow);
+        }
+
+        imageQueueList.appendChild(row);
+      });
+
+      if (tasks.length > maxItems) {
+        const more = document.createElement('div');
+        more.style.cssText = `
+          margin-top: 4px;
+          font-size: 11px;
+          color: #9ca3af;
+        `;
+        more.textContent = `其余 ${tasks.length - maxItems} 条已省略`;
+        imageQueueList.appendChild(more);
+      }
+    }
+
+    // 监听图片下载进度（Background Script 通过 storage 传递进度，仅做清理）
     browser.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local' && changes.imageDownloadProgress) {
         const progress = changes.imageDownloadProgress.newValue;
-
-        if (progress) {
-          const { current, total } = progress;
-
-          // 显示进度提示
-          showMessage(`正在下载图片 ${current}/${total}`, 'success');
-
-          // 下载完成后清理 storage
-          if (current === total) {
-            setTimeout(() => {
-              browser.storage.local.remove('imageDownloadProgress');
-            }, 500);
-          }
+        if (progress && progress.current === progress.total) {
+          setTimeout(() => {
+            browser.storage.local.remove('imageDownloadProgress');
+          }, 500);
         }
       }
     });
@@ -620,7 +836,7 @@ export default defineContentScript({
       }
     }
 
-    // 监听来自popup的消息
+    // 监听来自 popup 和 background 的消息
     browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       switch (message.type) {
         case 'START_SELECTION':
@@ -664,6 +880,11 @@ export default defineContentScript({
             sendResponse({ success: true });
           })();
           return true; // 异步响应
+
+        case 'IMAGE_DOWNLOAD_UPDATE':
+          // 来自 Background 的图片下载队列更新
+          renderImageQueue(message.data);
+          break;
       }
     });
   },

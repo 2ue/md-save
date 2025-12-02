@@ -8,7 +8,8 @@
  */
 
 import { BaseSaveStrategy } from './base';
-import type { SaveContext, SaveResult, ValidationResult, ExtensionConfig } from '../types';
+import { ImageDownloadService } from '../image-download';
+import type { SaveContext, SaveResult, ValidationResult, ExtensionConfig, ImageTask } from '../types';
 
 export class WebDAVSaveStrategy extends BaseSaveStrategy {
   readonly name = 'webdav';
@@ -53,13 +54,36 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
     try {
       // 动态导入 WebDAVClient（避免循环依赖）
       const { WebDAVClient } = await import('@/utils/webdav-client');
+      const imageDownloadService = new ImageDownloadService();
 
       // 创建 WebDAV 客户端
       const client = new WebDAVClient(context.config.webdav);
 
-      // 上传 Markdown 文件
+      // 先处理图片上传，保证 Markdown 中只保留真正成功保存的本地路径
+      let imageCount = 0;
+      let imagesFailedCount = 0;
+      let markdown = context.markdown;
+
+      if (context.images && context.images.length > 0) {
+        const result = await this.uploadImages(client, context);
+        imageCount = result.successCount;
+        imagesFailedCount = result.failedCount;
+
+        // 对于「下载成功但上传失败」的图片，需要把 Markdown 中的本地路径回退为原始 URL
+        if (result.uploadFailedTasks.length > 0) {
+          console.log(
+            '[WebDAVSaveStrategyImpl] Reverting',
+            result.uploadFailedTasks.length,
+            'images to original URLs after upload failure'
+          );
+          markdown = imageDownloadService.revertFailedTasks(markdown, result.uploadFailedTasks);
+          context.markdown = markdown;
+        }
+      }
+
+      // 最后上传 Markdown 文件（使用更新后的内容）
       const mdPath = `${context.filename}.md`;
-      const mdResult = await client.uploadFile(mdPath, context.markdown, false);
+      const mdResult = await client.uploadFile(mdPath, markdown, false);
 
       if (!mdResult.success) {
         // 文件已存在
@@ -77,17 +101,7 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
       }
 
       const finalPath = mdResult.finalPath || mdPath;
-      const fileSize = new Blob([context.markdown]).size;
-
-      // 如果有图片，批量上传
-      let imageCount = 0;
-      let imagesFailedCount = 0;
-
-      if (context.images && context.images.length > 0) {
-        const result = await this.uploadImages(client, context);
-        imageCount = result.successCount;
-        imagesFailedCount = result.failedCount;
-      }
+      const fileSize = new Blob([markdown]).size;
 
       return this.createSuccessResult(
         finalPath,
@@ -115,7 +129,7 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
   private async uploadImages(
     client: any,
     context: SaveContext
-  ): Promise<{ successCount: number; failedCount: number }> {
+  ): Promise<{ successCount: number; failedCount: number; uploadFailedTasks: ImageTask[] }> {
     console.log('[WebDAVSaveStrategyImpl] Starting image upload...');
 
     // 1. 过滤出成功下载的图片
@@ -125,7 +139,7 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
 
     if (successfulImages.length === 0) {
       console.log('[WebDAVSaveStrategyImpl] No images to upload');
-      return { successCount: 0, failedCount: context.images!.length };
+      return { successCount: 0, failedCount: context.images!.length, uploadFailedTasks: [] };
     }
 
     console.log('[WebDAVSaveStrategyImpl] Uploading', successfulImages.length, 'images');
@@ -145,14 +159,14 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
 
         if (result.success) {
           console.log('[WebDAVSaveStrategyImpl] Uploaded:', task.filename);
-          return { success: true };
+          return { success: true, task };
         } else {
           console.warn('[WebDAVSaveStrategyImpl] Upload failed:', task.filename, result.error);
-          return { success: false, error: result.error };
+          return { success: false, error: result.error, task };
         }
       } catch (error) {
         console.error('[WebDAVSaveStrategyImpl] Upload error:', task.filename, error);
-        return { success: false, error: String(error) };
+        return { success: false, error: String(error), task };
       }
     });
 
@@ -161,6 +175,7 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
     // 3. 统计结果
     let successCount = 0;
     let failedCount = 0;
+    const uploadFailedTasks: ImageTask[] = [];
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled' && result.value.success) {
@@ -169,6 +184,8 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
         failedCount++;
         if (result.status === 'rejected') {
           console.error('[WebDAVSaveStrategyImpl] Promise rejected:', result.reason);
+        } else if (result.value.task) {
+          uploadFailedTasks.push(result.value.task);
         }
       }
     });
@@ -182,6 +199,6 @@ export class WebDAVSaveStrategyImpl extends WebDAVSaveStrategy {
       failed: failedCount
     });
 
-    return { successCount, failedCount };
+    return { successCount, failedCount, uploadFailedTasks };
   }
 }

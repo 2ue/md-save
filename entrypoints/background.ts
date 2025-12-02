@@ -195,11 +195,43 @@ export default defineBackground(() => {
             hasSenderTab: !!sender.tab
           });
 
+          // 辅助函数：向触发保存的 tab 推送图片下载队列状态
+          const sendImageQueueUpdate = (phase: 'start' | 'end') => {
+            if (!tabId || !context.images || context.images.length === 0) return;
+
+            const tasksView = context.images.map(task => ({
+              originalUrl: task.originalUrl,
+              localPath: task.localPath,
+              status: task.status,
+              error: task.error
+            }));
+
+            const total = context.images.length;
+            const completed = context.images.filter(
+              task => task.status === 'success' || task.status === 'failed'
+            ).length;
+
+            browser.tabs.sendMessage(tabId!, {
+              type: 'IMAGE_DOWNLOAD_UPDATE',
+              data: {
+                tasks: tasksView,
+                total,
+                completed,
+                phase
+              }
+            }).catch(err => {
+              console.warn('[Background] Failed to send IMAGE_DOWNLOAD_UPDATE:', err);
+            });
+          };
+
           // 如果有图片任务，先在 Background Script 中下载
           // （Background Script 无 CORS 限制）
           if (context.images && context.images.length > 0) {
             console.log('[Background] ✅ 检测到图片任务，数量:', context.images.length);
             console.log('[Background] 开始下载图片...');
+
+            // 首次推送队列（全部为 pending 状态）
+            sendImageQueueUpdate('start');
 
             // 下载图片，失败的自动回退到原 URL
             const downloadResult = await imageDownloadService.download(
@@ -228,6 +260,9 @@ export default defineBackground(() => {
             );
 
             console.log('[SaveStrategy] Image download complete:', stats);
+
+            // 下载结束后再次推送队列（包含 success / failed 状态）
+            sendImageQueueUpdate('end');
           }
 
           // 直接执行保存策略（避免循环消息传递）
