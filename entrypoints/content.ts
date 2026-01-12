@@ -139,7 +139,10 @@ export default defineContentScript({
       if (!data || !data.tasks || data.tasks.length === 0) return;
 
       ensureImageQueueModal();
-      if (!imageQueueModal || !imageQueueHeader || !imageQueueList) return;
+      const modal = imageQueueModal;
+      const header = imageQueueHeader;
+      const listEl = imageQueueList;
+      if (!modal || !header || !listEl) return;
 
       const { tasks, total, completed, phase } = data;
 
@@ -148,13 +151,13 @@ export default defineContentScript({
 
       // 更新头部 summary
       if (phase === 'start') {
-        imageQueueHeader.textContent = `准备下载图片 ${total} 张`;
+        header.textContent = `准备下载图片 ${total} 张`;
       } else {
-        imageQueueHeader.textContent = `下载完成：成功 ${successCount} 张，失败 ${failedCount} 张`;
+        header.textContent = `下载完成：成功 ${successCount} 张，失败 ${failedCount} 张`;
       }
 
       // 渲染列表（最多显示前 50 条）
-      imageQueueList.innerHTML = '';
+      listEl.innerHTML = '';
       const maxItems = 50;
       const displayTasks = tasks.slice(0, maxItems);
 
@@ -231,7 +234,7 @@ export default defineContentScript({
           row.appendChild(errorRow);
         }
 
-        imageQueueList.appendChild(row);
+        listEl.appendChild(row);
       });
 
       if (tasks.length > maxItems) {
@@ -242,7 +245,7 @@ export default defineContentScript({
           color: #9ca3af;
         `;
         more.textContent = `其余 ${tasks.length - maxItems} 条已省略`;
-        imageQueueList.appendChild(more);
+        listEl.appendChild(more);
       }
     }
 
@@ -724,6 +727,15 @@ export default defineContentScript({
           imageTasks = prepared.tasks;
           console.log('[ContentScript] 找到图片数量:', imageTasks.length);
           console.log('[ContentScript] Markdown URL 已替换:', markdown.includes('./assets/'));
+          if (imageTasks.length > 0) {
+            console.log('[ContentScript][Debug] 第一张图片任务:', {
+              originalUrl: imageTasks[0].originalUrl,
+              localPath: imageTasks[0].localPath,
+              filename: imageTasks[0].filename
+            });
+          } else {
+            console.log('[ContentScript][Debug] 已启用图片下载，但未提取到任何图片任务');
+          }
         } else {
           console.log('[ContentScript] ❌ 图片下载未启用，跳过图片处理');
           console.log('[ContentScript] 原因: config?.imageDownload?.enabled =', config?.imageDownload?.enabled);
@@ -741,7 +753,11 @@ export default defineContentScript({
           config
         };
 
-        console.log('[ContentScript] Saving with strategy:', saveMethod);
+        console.log('[ContentScript] Saving with strategy:', saveMethod, {
+          hasImages: !!context.images,
+          imageCount: context.images?.length || 0,
+          filename: context.filename
+        });
 
         // 零分支！使用策略管理器
         const result: SaveResult = await contentStrategyManager.save(context, saveMethod);

@@ -19,7 +19,7 @@ const HISTORY_STORAGE_KEY = 'saveHistory';
 const MAX_HISTORY_RECORDS = 1000;
 
 export default defineBackground(() => {
-  console.log('MD Save Extension loaded!', { id: browser.runtime.id });
+      console.log('MD Save Extension loaded!', { id: browser.runtime.id });
 
   // 初始化策略管理器（Background Script）
   const backgroundStrategyManager = new SaveStrategyManager();
@@ -195,6 +195,17 @@ export default defineBackground(() => {
             hasSenderTab: !!sender.tab
           });
 
+          if (context.images && context.images.length > 0) {
+            console.log('[SaveStrategy][Debug] First image task (from content):', {
+              originalUrl: context.images[0].originalUrl,
+              localPath: context.images[0].localPath,
+              webdavPath: context.images[0].webdavPath,
+              status: context.images[0].status
+            });
+          } else {
+            console.log('[SaveStrategy][Debug] Context 中没有图片任务（images 为空或未定义）');
+          }
+
           // 辅助函数：向触发保存的 tab 推送图片下载队列状态
           const sendImageQueueUpdate = (phase: 'start' | 'end') => {
             if (!tabId || !context.images || context.images.length === 0) return;
@@ -261,6 +272,16 @@ export default defineBackground(() => {
 
             console.log('[SaveStrategy] Image download complete:', stats);
 
+            // Debug: 输出首张图片最终状态
+            if (context.images.length > 0) {
+              console.log('[SaveStrategy][Debug] 第一张图片下载后的状态:', {
+                originalUrl: context.images[0].originalUrl,
+                status: context.images[0].status,
+                hasBlob: !!context.images[0].blob,
+                error: context.images[0].error
+              });
+            }
+
             // 下载结束后再次推送队列（包含 success / failed 状态）
             sendImageQueueUpdate('end');
           }
@@ -277,6 +298,8 @@ export default defineBackground(() => {
 
           // 如果成功，记录历史
           if (result.success && result.savedPath) {
+            const webdavUrl = strategy === 'webdav' ? context.config.webdav?.url : undefined;
+
             await addHistoryRecord({
               url: context.url,
               title: context.title,
@@ -284,6 +307,7 @@ export default defineBackground(() => {
               filename: context.filename,
               savePath: result.savedPath,
               saveLocation: strategy === 'local' ? 'local' : 'webdav',
+              webdavUrl,
               contentPreview: context.markdown.substring(0, 100),
               fileSize: result.metadata?.fileSize || new Blob([context.markdown]).size
             });
@@ -467,6 +491,7 @@ export default defineBackground(() => {
               filename,
               savePath: fullPath,
               saveLocation: 'webdav',
+              webdavUrl: webdavConfig?.url,
               contentPreview: pageInfo.contentPreview || '',
               fileSize: new Blob([content]).size
             });

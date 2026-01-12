@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted, computed } from 'vue';
-import { Search, Trash2, ExternalLink, Calendar, Globe, Download, AlertCircle, CheckCircle, Clock, Filter, RefreshCw } from 'lucide-vue-next';
+import { Search, Trash2, Calendar, Globe, Download, Clock, Filter, RefreshCw } from 'lucide-vue-next';
 import type { HistoryRecord } from '../../types';
 
 interface HistoryFilters {
@@ -204,6 +204,13 @@ function openUrl(url: string) {
   window.open(url, '_blank');
 }
 
+function getWebdavFileUrl(record: HistoryRecord): string {
+  if (!record.webdavUrl) return '';
+  const baseUrl = record.webdavUrl.replace(/\/$/, '');
+  const path = record.savePath.startsWith('/') ? record.savePath : `/${record.savePath}`;
+  return `${baseUrl}${path}`;
+}
+
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN', {
     year: 'numeric',
@@ -212,14 +219,6 @@ function formatDate(timestamp: number): string {
     hour: '2-digit',
     minute: '2-digit'
   });
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 function clearFilters() {
@@ -490,7 +489,17 @@ async function handleSync() {
                 <!-- 保存目录 (完整路径) -->
                 <td class="px-4 py-3">
                   <div class="max-w-xs">
-                    <span class="text-sm text-gray-700 font-mono truncate block" :title="record.savePath">
+                    <!-- WebDAV: 可点击跳转 -->
+                    <button
+                      v-if="record.saveLocation === 'webdav' && record.webdavUrl"
+                      @click="openUrl(getWebdavFileUrl(record))"
+                      class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-mono truncate block text-left"
+                      :title="getWebdavFileUrl(record)"
+                    >
+                      {{ record.savePath }}
+                    </button>
+                    <!-- Local 或无 webdavUrl: 仅展示 -->
+                    <span v-else class="text-sm text-gray-700 font-mono truncate block" :title="record.savePath">
                       {{ record.savePath }}
                     </span>
                   </div>

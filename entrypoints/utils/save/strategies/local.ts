@@ -7,7 +7,9 @@
  */
 
 import { BaseSaveStrategy } from './base';
-import type { SaveContext, SaveResult, ValidationResult, ExtensionConfig } from '../types';
+import { BrowserDownload } from '../browser-download';
+import type { DownloadResult } from '../browser-download';
+import type { SaveContext, SaveResult, ValidationResult, ExtensionConfig, ImageTask } from '../types';
 
 export class LocalSaveStrategy extends BaseSaveStrategy {
   readonly name = 'local';
@@ -70,19 +72,19 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
 
       // 使用 browser.downloads API 下载
       const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(context.markdown)}`;
-
-      const downloadOptions: any = {
+      const downloader = new BrowserDownload({
         url: dataUrl,
         filename: safePath,
-        saveAs: false  // 静默下载，不弹窗
-      };
+        saveAs: false
+      });
 
-      const downloadId = await browser.downloads.download(downloadOptions);
+      const { id: downloadId, filename: realPath } = await downloader.download();
+      const resolvedPath = realPath || safePath;
 
       const fileSize = new Blob([context.markdown]).size;
 
       return this.createSuccessResult(
-        safePath,
+        resolvedPath,
         1,
         {
           fileSize,
@@ -113,14 +115,22 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
       const basePath = downloadPath ? `${downloadPath}/` : '';
       const mdSafePath = `${basePath}${context.filename}.md`;
 
-      const mdDownloadOptions: any = {
+      console.log('[LocalSaveStrategyImpl][Debug] Markdown save path:', {
+        downloadPath,
+        basePath,
+        contextFilename: context.filename,
+        mdSafePath
+      });
+
+      const mdDownloader = new BrowserDownload({
         url: mdDataUrl,
         filename: mdSafePath,
-        saveAs: false  // 静默下载，不弹窗
-      };
+        saveAs: false
+      });
 
-      const mdDownloadId = await browser.downloads.download(mdDownloadOptions);
-      console.log('[LocalSaveStrategyImpl] Markdown download started, ID:', mdDownloadId);
+      const { id: mdDownloadId, filename: mdRealPath } = await mdDownloader.download();
+      const resolvedMarkdownPath = mdRealPath || mdSafePath;
+      console.log('[LocalSaveStrategyImpl] Markdown saved to:', resolvedMarkdownPath);
 
       // 2. 计算图片保存路径前缀（与 Markdown 同级目录下的 assets/）
       const filenameDir = context.filename.includes('/')
@@ -129,54 +139,60 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
       const assetsDir = this.getAssetsDir(context);
       const imageBasePrefix = `${basePath}${filenameDir}${assetsDir}/`;
 
+      console.log('[LocalSaveStrategyImpl][Debug] Image base prefix:', {
+        filenameDir,
+        assetsDir,
+        imageBasePrefix
+      });
+
       // 3. 并行下载所有图片到 assets/ 子目录
-      const { successCount, failedCount } = this.getImageStats(context);
+      const allImages = context.images || [];
+      const blobTasks = allImages.filter(task => task.status === 'success' && task.blob);
+      const initialFailedCount = allImages.filter(task => task.status === 'failed').length;
+
+      const imageResults = await Promise.allSettled(
+        blobTasks.map((task) => this.downloadImageTask(task, imageBasePrefix))
+      );
+
       const imageDownloadIds: number[] = [];
+      let browserDownloadFailures = 0;
 
-      if (successCount > 0) {
-        console.log('[LocalSaveStrategyImpl] Downloading', successCount, 'images...');
-
-        const imagePromises = context.images!
-          .filter(task => task.status === 'success' && task.blob)
-          .map(async (task) => {
-            // 图片保存到与 Markdown 同级的 assets/ 目录
-            const imagePath = `${imageBasePrefix}${task.filename}`;
-            const imageUrl = URL.createObjectURL(task.blob!); // 已通过 filter 检查
-
-            return browser.downloads.download({
-              url: imageUrl,
-              filename: imagePath,
-              saveAs: false  // 不显示另存为对话框
-            });
+      imageResults.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          const { task, downloadResult } = result.value;
+          imageDownloadIds.push(downloadResult.id);
+          console.log('[LocalSaveStrategyImpl] Image saved:', {
+            filename: task.filename,
+            realPath: downloadResult.filename
           });
+        } else {
+          browserDownloadFailures += 1;
+          const failure = result.reason as { task?: ImageTask; error?: unknown };
+          console.error('[LocalSaveStrategyImpl] Image download failed:', {
+            filename: failure?.task?.filename,
+            error: failure?.error ?? result.reason
+          });
+        }
+      });
 
-        const results = await Promise.allSettled(imagePromises);
-
-        results.forEach((result) => {
-          if (result.status === 'fulfilled') {
-            imageDownloadIds.push(result.value);
-            console.log('[LocalSaveStrategyImpl] Image download started, ID:', result.value);
-          } else {
-            console.error('[LocalSaveStrategyImpl] Image download failed:', result.reason);
-          }
-        });
-      }
+      const savedImagesCount = imageDownloadIds.length;
+      const totalFailedImages = initialFailedCount + browserDownloadFailures;
 
       console.log('[LocalSaveStrategyImpl] Multi-file download complete:', {
-        markdown: mdSafePath,
-        images: successCount,
-        failed: failedCount
+        markdown: resolvedMarkdownPath,
+        imagesSaved: savedImagesCount,
+        failed: totalFailedImages
       });
 
       const fileSize = new Blob([context.markdown]).size;
 
       return this.createSuccessResult(
-        mdSafePath,
-        1 + successCount,
+        resolvedMarkdownPath,
+        1 + savedImagesCount,
         {
           fileSize,
-          imageCount: successCount,
-          imagesFailedCount: failedCount,
+          imageCount: savedImagesCount,
+          imagesFailedCount: totalFailedImages,
           downloadId: mdDownloadId,
           imageDownloadIds
         }
@@ -198,5 +214,36 @@ export class LocalSaveStrategyImpl extends LocalSaveStrategy {
       return config.customDownloadPath.trim();
     }
     return '';
+  }
+
+  private async downloadImageTask(
+    task: ImageTask,
+    imageBasePrefix: string
+  ): Promise<{ task: ImageTask; downloadResult: DownloadResult }> {
+    if (!task.blob) {
+      throw { task, error: new Error('Image blob is missing') };
+    }
+
+    const imagePath = `${imageBasePrefix}${task.filename}`;
+    const imageUrl = URL.createObjectURL(task.blob);
+
+    const downloader = new BrowserDownload(
+      {
+        url: imageUrl,
+        filename: imagePath,
+        saveAs: false
+      },
+      () => {
+        URL.revokeObjectURL(imageUrl);
+        task.blob = undefined;
+      }
+    );
+
+    try {
+      const downloadResult = await downloader.download();
+      return { task, downloadResult };
+    } catch (error) {
+      throw { task, error };
+    }
   }
 }

@@ -6,7 +6,37 @@
 
 import type { ImageTask } from './types';
 
+const EXTENSION_TO_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  avif: 'image/avif'
+};
+
+const CHROMIUM_REGEX = /(chrome|chromium|crios|edg|brave)/i;
+
+function detectChromium(): boolean {
+  if (typeof navigator === 'undefined' || !navigator.userAgent) {
+    return false;
+  }
+  const ua = navigator.userAgent;
+  if (/firefox/i.test(ua)) {
+    return false;
+  }
+  return CHROMIUM_REGEX.test(ua);
+}
+
 export class ImageDownloadService {
+  private readonly isChromiumBrowser: boolean;
+
+  constructor() {
+    this.isChromiumBrowser = detectChromium();
+  }
   /**
    * 准备图片下载（提取 + 生成映射）
    *
@@ -19,6 +49,9 @@ export class ImageDownloadService {
     const urls = this.extractImageUrls(markdown);
 
     console.log('[ImageDownloadService] Extracted image URLs:', urls);
+    if (urls.length === 0) {
+      console.log('[ImageDownloadService][Debug] 当前 Markdown 中未匹配到任何图片语法 ![](...)');
+    }
 
     // 2. 提取 Markdown 文件的目录部分（统一在这里处理）
     const filenameDir = filename.includes('/')
@@ -81,7 +114,13 @@ export class ImageDownloadService {
             throw new Error(`HTTP ${response.status}`);
           }
 
-          task.blob = await response.blob();
+          let blob = await response.blob();
+
+          if (this.isChromiumBrowser) {
+            blob = this.fixChromiumBlobType(task, blob);
+          }
+
+          task.blob = blob;
           task.status = 'success';
           console.log('[ImageDownloadService] Downloaded:', task.filename, `(${task.blob.size} bytes)`);
         } catch (error) {
@@ -108,6 +147,30 @@ export class ImageDownloadService {
     }
 
     return { tasks: downloadedTasks, markdown: fixedMarkdown };
+  }
+
+  private fixChromiumBlobType(task: ImageTask, blob: Blob): Blob {
+    const filenameExt = this.getFilenameExtension(task.filename);
+    const fallbackExt = this.getExtension(task.originalUrl);
+    const extension = filenameExt || fallbackExt;
+
+    if (!extension) {
+      return blob;
+    }
+
+    const expectedMime = this.extensionToMimeType(extension);
+
+    if (!expectedMime || blob.type === expectedMime) {
+      return blob;
+    }
+
+    console.log('[ImageDownloadService] Chromium MIME fix:', {
+      filename: task.filename,
+      originalType: blob.type,
+      expectedType: expectedMime
+    });
+
+    return blob.slice(0, blob.size, expectedMime);
   }
 
   /**
@@ -155,6 +218,15 @@ export class ImageDownloadService {
     } catch {
       return null;
     }
+  }
+
+  private getFilenameExtension(filename: string): string | null {
+    const match = filename.match(/\.([a-z0-9]+)$/i);
+    return match ? match[1].toLowerCase() : null;
+  }
+
+  private extensionToMimeType(ext: string): string {
+    return EXTENSION_TO_MIME[ext.toLowerCase()] || 'application/octet-stream';
   }
 
   /**

@@ -7,6 +7,7 @@ export interface HistoryRecord {
   saveLocation: 'local' | 'webdav';
   filename: string;
   savePath: string;        // Full save path: "Downloads/markdown/note.md" or "/webdav/note.md"
+  webdavUrl?: string;      // WebDAV server URL (only for webdav, e.g. "https://dav.example.com")
   domain: string;
   contentPreview: string;  // First 100 characters preview
   fileSize: number;        // File size in bytes
